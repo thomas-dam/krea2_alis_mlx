@@ -56,16 +56,20 @@ Useful flags: `--width/--height 512|768|1024`, `--steps 8`, `--seed 0`, `--num-i
 
 ## 📦 Models
 
-The weights live on Hugging Face (the code here downloads them for you). Pick one:
+Two quantized **MLX builds** are published on Hugging Face — the code here downloads the one
+you pick:
 
-| Build | Size | Quality | When to use |
+| Build | Transformer | Quality | When to use |
 |---|---|---|---|
 | [**8-bit**](https://huggingface.co/avlp12/Krea-2-Turbo-Alis-MLX-8bit) *(default)* | 14.2 GB | near-lossless (vel-cos 0.99996) | best fidelity |
 | [**mixed-4/8**](https://huggingface.co/avlp12/Krea-2-Turbo-Alis-MLX-mixed-4-8) | 9.8 GB | near-lossless (0.99849) | smaller download |
-| bf16 (`--precision bf16`) | ~35 GB | reference | huge-RAM Macs |
 
-All three run at the **same speed** — generation is attention-bound, so quantization only
-shrinks the download, it doesn't speed things up. On a big-RAM Mac, bf16 is just as fast.
+> **What about bf16?** There's **no separate bf16 build** — `--precision bf16` runs **Krea's
+> original weights** (`turbo.safetensors`, ~24 GB) through this *same* MLX code, pulled from
+> [`krea/Krea-2-Turbo`](https://huggingface.co/krea/Krea-2-Turbo). It's the full-precision
+> reference, but the quantized builds are near-lossless **and every build runs at the same speed**
+> (generation is attention-bound — quantization only shrinks the download, it doesn't speed things
+> up). So 8-bit / mixed-4/8 are the practical picks; reach for bf16 only to double-check fidelity.
 
 ---
 
