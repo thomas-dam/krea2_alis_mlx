@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Local web UI for Krea-2-Turbo on Apple MLX.
 
-    pip install mlx transformers "mflux>=0.18,<0.19" huggingface_hub gradio
-    python app.py            # opens http://localhost:7860
+    python3 -m pip install mlx transformers "mflux>=0.18,<0.19" huggingface_hub gradio
+    python3 app.py            # opens http://localhost:7860
 
 Auto-detects the weights shipped in this folder (8-bit or mixed-4/8). The VAE /
 Qwen3-VL-4B encoder / tokenizer are pulled from krea/Krea-2-Turbo on first run.

@@ -8,15 +8,15 @@ numbers in the model card, not for normal use (for that, see the top-level `app.
 ## Setup
 
 ```bash
-pip install -r ../requirements.txt
-pip install torch diffusers einops accelerate          # validation-only extras
+python3 -m pip install -r ../requirements.txt
+python3 -m pip install torch diffusers einops accelerate          # validation-only extras
 git clone https://github.com/krea-ai/krea-2 krea-2-official   # PyTorch reference (run from repo root)
 # base weights: a local krea/Krea-2-Turbo snapshot at ./weights/Krea-2-Turbo
-huggingface-cli download krea/Krea-2-Turbo --local-dir weights/Krea-2-Turbo
+hf download krea/Krea-2-Turbo --local-dir weights/Krea-2-Turbo
 ```
 
 Run from the **repo root** (so `import krea2` and the relative paths resolve), e.g.
-`python validation/validate_e2e.py`.
+`python3 validation/validate_e2e.py`.
 
 ## What each script checks
 

@@ -21,13 +21,17 @@ original PyTorch** (end-to-end pixel cosine **1.000000**).
 
 **You need:** an **Apple-silicon Mac** (M1/M2/M3/M4), **Python 3.10+**, and ~20 GB free disk.
 
+> 🍎 **On macOS the commands are `python3` / `pip3`, not `python` / `pip`.** No Python yet?
+> Install it from [python.org](https://www.python.org/downloads/macos/) (or `brew install python`),
+> then reopen Terminal.
+
 ### Option A — Web UI (easiest)
 
 ```bash
 git clone https://github.com/avlp12/krea2_alis_mlx
 cd krea2_alis_mlx
-pip install -r requirements.txt
-python app.py
+python3 -m pip install -r requirements.txt
+python3 app.py
 ```
 
 Your browser opens at **http://localhost:7860** — type a prompt, click **Generate**. ✨
@@ -39,7 +43,7 @@ Your browser opens at **http://localhost:7860** — type a prompt, click **Gener
 ### Option B — Command line
 
 ```bash
-python generate.py "a red fox in the snow, photorealistic" --out fox.png
+python3 generate.py "a red fox in the snow, photorealistic" --out fox.png
 ```
 
 Useful flags: `--width/--height 512|768|1024`, `--steps 8`, `--seed 0`, `--num-images 2`.
