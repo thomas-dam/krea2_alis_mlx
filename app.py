@@ -34,19 +34,26 @@ def _pipe(precision):
     return _PIPE
 
 
-def generate(prompt, model, size, steps, seed, num_images):
+def generate(prompt, model, size, steps, seed, num_images, progress=gr.Progress()):
     if not prompt or not prompt.strip():
         raise gr.Error("Enter a prompt.")
+    progress(0, desc="Loading model… (first run downloads weights — a few minutes)")
+    pipe = _pipe(model)
     s = int(size)
-    return _pipe(model).generate(prompt.strip(), width=s, height=s, steps=int(steps),
-                                 seed=int(seed), num_images=int(num_images))
+
+    def cb(step, total):
+        progress(step / total, desc=f"Generating · step {step}/{total}")
+
+    return pipe.generate(prompt.strip(), width=s, height=s, steps=int(steps),
+                         seed=int(seed), num_images=int(num_images), step_callback=cb)
 
 
 with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
     default_prec, _ = resolve_weights(HERE, download=False)  # the build already in this folder, if any
     gr.Markdown("# Krea&nbsp;2&nbsp;Turbo · Alis MLX\n"
                 "Local text-to-image on Apple silicon · 8-step Turbo (no CFG). "
-                "Switching **Model** downloads that build on first use.")
+                "**First run loads the model (~30 s); then ~50 s per 1024² image** "
+                "(×N for N images). Switching **Model** downloads that build on first use.")
     with gr.Row():
         with gr.Column(scale=1):
             prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")

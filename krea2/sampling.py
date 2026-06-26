@@ -64,6 +64,7 @@ def sample(
     mu=None,
     init_noise=None,   # (n,16,H/8,W/8) to match a PT run; else MLX RNG
     dtype=mx.bfloat16,
+    step_callback=None,  # called as step_callback(step, total) after each denoising step
 ):
     cfg = guidance > 0
     patch = transformer.cfg.patch
@@ -92,13 +93,16 @@ def sample(
     x2 = (maxres // align) ** 2
     ts = timesteps(img.shape[1], steps, x1, x2, y1=y1, y2=y2, mu=mu)
 
-    for tc, tp in zip(ts[:-1], ts[1:]):
+    total = len(ts) - 1
+    for i, (tc, tp) in enumerate(zip(ts[:-1], ts[1:])):
         t = mx.full((n,), tc, dtype=dtype)
         v = transformer(img, ctx, t, pos, full_mask)
         if cfg:
             raise NotImplementedError("CFG path not needed for turbo")
         img = img + (tp - tc) * v
         mx.eval(img)
+        if step_callback is not None:
+            step_callback(i + 1, total)
 
     latent = unpatchify(img, patch, h_, w_, vae.latent_channels)  # (n,16,lat_h,lat_w)
     decoded = vae.decode(latent.astype(mx.float32))  # (n,3,1,H,W)

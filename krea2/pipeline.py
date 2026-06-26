@@ -111,7 +111,8 @@ class Krea2Pipeline:
         self.vae = _load_vae(base)
         self.encoder = Qwen3VLConditioner(base, dtype=mx.bfloat16)
 
-    def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1):
+    def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1, step_callback=None):
         dec = sample(self.transformer, self.vae, self.encoder, [prompt] * num_images,
-                     width=width, height=height, steps=steps, guidance=0.0, seed=seed)
+                     width=width, height=height, steps=steps, guidance=0.0, seed=seed,
+                     step_callback=step_callback)
         return to_pil(dec)
