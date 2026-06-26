@@ -24,13 +24,49 @@ BUILDS = {
     "8bit": ("avlp12/Krea-2-Turbo-Alis-MLX-8bit", "transformer_8bit.safetensors"),
     "mixed-4-8": ("avlp12/Krea-2-Turbo-Alis-MLX-mixed-4-8", "transformer_mixed_4_8.safetensors"),
 }
+_CACHE = os.path.expanduser("~/.cache/krea2_alis_mlx")
+
+
+def _http_download(repo: str, filename: str, dest_root: str) -> str:
+    """Download {repo}/resolve/main/{filename} over plain HTTP (the HF CDN / Xet bridge).
+
+    We bypass huggingface_hub's downloader on purpose: its Xet path hangs with no fallback
+    when cas-server.xethub.hf.co is unreachable (corporate firewalls, some ISPs), while the
+    public resolve URL always works via the CDN bridge. Cached under ~/.cache/krea2_alis_mlx;
+    skips the download if the local file already matches the remote size.
+    """
+    import requests
+
+    url = f"https://huggingface.co/{repo}/resolve/main/{filename}"
+    dest = os.path.join(dest_root, filename)
+    try:
+        total = int(requests.head(url, allow_redirects=True, timeout=30).headers.get("content-length") or 0)
+    except Exception:
+        total = 0
+    if os.path.exists(dest) and total and os.path.getsize(dest) == total:
+        return dest
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    tmp, done = dest + ".part", 0
+    with requests.get(url, stream=True, timeout=(30, 120), allow_redirects=True) as r:
+        r.raise_for_status()
+        total = total or int(r.headers.get("content-length") or 0)
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(4 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                if total:
+                    print(f"\r  ↓ {filename}  {done // 1048576} / {total // 1048576} MB", end="", flush=True)
+    if total:
+        print()
+    os.replace(tmp, dest)
+    return dest
 
 
 def resolve_weights(folder: str = ".", precision: str | None = None, download: bool = True):
     """Resolve the transformer weights to use. Returns (precision, path).
 
     - precision given ('8bit'|'mixed-4-8'): use the local file if present, else (download)
-      fetch that build from its HF repo.
+      fetch that build from its HF repo (cached under ~/.cache/krea2_alis_mlx).
     - precision None (auto): use whichever build's file is already in `folder`; if none,
       default to 8-bit (downloaded on load).
     """
@@ -41,8 +77,7 @@ def resolve_weights(folder: str = ".", precision: str | None = None, download: b
             return prec, local
         if not download:
             return prec, None
-        from huggingface_hub import hf_hub_download
-        return prec, hf_hub_download(repo, fname)
+        return prec, _http_download(repo, fname, os.path.join(_CACHE, repo.replace("/", "__")))
 
     if precision in BUILDS:
         return _resolve(precision)
@@ -53,12 +88,19 @@ def resolve_weights(folder: str = ".", precision: str | None = None, download: b
 
 
 def _base_dir() -> str:
-    from huggingface_hub import snapshot_download
+    """Fetch the VAE / Qwen3-VL-4B encoder / tokenizer from krea/Krea-2-Turbo over HTTP."""
+    from huggingface_hub import HfApi
 
-    return snapshot_download(
-        BASE_REPO,
-        allow_patterns=["vae/*", "text_encoder/*", "tokenizer/*", "model_index.json"],
-    )
+    dest = os.path.join(_CACHE, BASE_REPO.replace("/", "__"))
+    exts = (".safetensors", ".json", ".jinja", ".txt", ".model")
+    want = [
+        s.rfilename for s in HfApi().model_info(BASE_REPO).siblings
+        if (s.rfilename.startswith(("vae/", "text_encoder/", "tokenizer/")) or s.rfilename == "model_index.json")
+        and s.rfilename.endswith(exts)
+    ]
+    for f in want:
+        _http_download(BASE_REPO, f, dest)
+    return dest
 
 
 def _load_vae(base_dir: str):

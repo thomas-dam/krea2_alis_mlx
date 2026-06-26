@@ -104,6 +104,16 @@ is the verification harness; `docs/PORT_PLAN.md` is the build journal.
 
 ---
 
+## 🛠️ Troubleshooting
+
+- **`zsh: command not found: python` / `pip`** → on macOS use **`python3`** and **`python3 -m pip`**.
+- **First run downloads a lot** (~14 GB model + ~8 GB encoder/VAE) over the HF CDN — give it a
+  few minutes; you'll see a `↓ … MB / MB` progress line. The app downloads via plain HTTP on
+  purpose (it avoids HuggingFace's Xet client, which can **hang** behind some firewalls/ISPs).
+- **Generation feels slow** → a 1024² image is ~50 s (8 steps) per image; the web UI shows a
+  live step progress bar. Quantization doesn't speed generation up (it's attention-bound) — it
+  only shrinks the download.
+
 ## 📜 License
 
 This code is an independent MLX implementation. The **model weights** are a modified

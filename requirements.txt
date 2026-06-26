@@ -3,6 +3,7 @@ mlx>=0.31,<0.32
 mflux>=0.18,<0.19          # reused for the Qwen-Image VAE + weight loaders
 transformers>=5.0          # Qwen3-VL-4B tokenizer / encoder
 huggingface_hub>=0.26
+requests
 numpy
 pillow
 gradio>=5                  # only needed for the web UI (app.py)
