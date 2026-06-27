@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Generate images with Krea-2-Turbo on Apple MLX.
 
-    python3 -m pip install mlx transformers mflux huggingface_hub
+    python3 -m pip install -r requirements.txt
     python3 generate.py "a fox in the snow"
 
 8-bit (default) uses this repo's transformer_8bit.safetensors. Use --precision bf16

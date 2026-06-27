@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Local web UI for Krea-2-Turbo on Apple MLX.
 
-    python3 -m pip install mlx transformers "mflux>=0.18,<0.19" huggingface_hub gradio
+    python3 -m pip install -r requirements.txt
     python3 app.py            # opens http://localhost:7860
 
 Auto-detects the weights shipped in this folder (8-bit or mixed-4/8). The VAE /
@@ -37,28 +37,37 @@ def _pipe(precision):
 def generate(prompt, model, size, steps, seed, num_images, safety_on, progress=gr.Progress()):
     if not prompt or not prompt.strip():
         raise gr.Error("Enter a prompt.")
-    progress(0, desc="Loading model… (first run downloads weights — a few minutes)")
-    pipe = _pipe(model)
-    s = int(size)
+    try:
+        progress(0, desc="Loading model… (first run downloads weights — a few minutes)")
+        pipe = _pipe(model)
+        s = int(size)
 
-    def cb(step, total):
-        progress(step / total, desc=f"Generating · step {step}/{total}")
+        def cb(step, total):
+            progress(step / total, desc=f"Generating · step {step}/{total}")
 
-    imgs = pipe.generate(prompt.strip(), width=s, height=s, steps=int(steps),
-                         seed=int(seed), num_images=int(num_images), step_callback=cb)
-    if safety_on:
-        progress(1.0, desc="Safety check…")
-        from krea2 import safety
-        imgs, _ = safety.apply(imgs, enabled=True)
-    return imgs
+        imgs = pipe.generate(prompt.strip(), width=s, height=s, steps=int(steps),
+                             seed=int(seed), num_images=int(num_images), step_callback=cb)
+        if safety_on:
+            progress(1.0, desc="Safety check…")
+            from krea2 import safety
+            imgs, _ = safety.apply(imgs, enabled=True)
+        return imgs
+    except gr.Error:
+        raise
+    except Exception as e:  # surface OOM / download errors as a friendly message, not a traceback
+        m = str(e).lower()
+        if any(k in m for k in ("memory", "alloc", "metal")):
+            raise gr.Error("Out of memory — 1024² needs ~24 GB+ unified memory. Try Size 512, "
+                           "fewer Images, or the mixed-4/8 build.") from None
+        raise gr.Error(f"Generation failed: {e}") from None
 
 
-with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
+with gr.Blocks(title="Krea 2 Turbo · Alis MLX", theme=gr.themes.Soft()) as demo:
     default_prec, _ = resolve_weights(HERE, download=False)  # the build already in this folder, if any
     gr.Markdown("# Krea&nbsp;2&nbsp;Turbo · Alis MLX\n"
                 "Local text-to-image on Apple silicon · 8-step Turbo (no CFG). "
-                "**First run loads the model (~30 s); then ~50 s per 1024² image** "
-                "(×N for N images). Switching **Model** downloads that build on first use.")
+                "**First run loads the model (~30 s); then ~50 s per 1024² image on an M3 Ultra** "
+                "(slower chips take longer; ×N for N images). Switching **Model** downloads that build on first use.")
     with gr.Row():
         with gr.Column(scale=1):
             prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")
@@ -83,4 +92,4 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(theme=gr.themes.Soft())
+    demo.queue().launch()
