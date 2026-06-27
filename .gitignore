@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+# build artifacts
+build/
+dist/
+*.egg-info/
 # weights / outputs / reference (not tracked here)
 weights/
 krea-2-official/
