@@ -9,6 +9,7 @@ Qwen3-VL-4B encoder / tokenizer are pulled from krea/Krea-2-Turbo on first run.
 Set KREA2_BASE_DIR to a local Krea-2-Turbo snapshot to skip that download.
 """
 
+import gc
 import os
 
 import gradio as gr
@@ -29,6 +30,9 @@ def _pipe(precision):
     global _PIPE, _PIPE_PREC
     if _PIPE is None or _PIPE_PREC != precision:
         prec, path = resolve_weights(HERE, precision=precision, download=True)
+        # free the previous build first — two 12.9B transformers won't fit in unified memory
+        _PIPE, _PIPE_PREC = None, None
+        gc.collect()
         _PIPE = Krea2Pipeline(path, precision=prec, base_dir=os.environ.get("KREA2_BASE_DIR"))
         _PIPE_PREC = prec
     return _PIPE
@@ -92,4 +96,5 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX", theme=gr.themes.Soft()) as demo
 
 
 if __name__ == "__main__":
-    demo.queue().launch()
+    # bind to loopback by default (don't expose the generator on the LAN); override with KREA2_HOST
+    demo.queue().launch(server_name=os.environ.get("KREA2_HOST", "127.0.0.1"))

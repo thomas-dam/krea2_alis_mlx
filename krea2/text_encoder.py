@@ -14,7 +14,7 @@ import glob
 import mlx.core as mx
 import numpy as np
 from mlx import nn
-from mlx.utils import tree_unflatten
+from mlx.utils import tree_flatten, tree_unflatten
 
 SELECT_LAYERS = (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
 PREFIX = (
@@ -144,11 +144,23 @@ class Qwen3TextModel(nn.Module):
 
 def load_text_encoder(repo: str, dtype=mx.float32) -> Qwen3TextModel:
     model = Qwen3TextModel()
+    shards = sorted(glob.glob(f"{repo}/text_encoder/*.safetensors"))
+    if not shards:
+        raise FileNotFoundError(f"No text_encoder/*.safetensors found under {repo} "
+                                "(incomplete download or wrong base dir).")
     weights = {}
-    for shard in sorted(glob.glob(f"{repo}/text_encoder/*.safetensors")):
+    for shard in shards:
         for k, v in mx.load(shard).items():
             if k.startswith("language_model."):
                 weights[k[len("language_model."):]] = v.astype(dtype)
+    # strict: every parameter must be provided exactly once (catches missing shards / schema drift
+    # that would otherwise leave random-init weights and silently produce garbage)
+    expected = {k for k, _ in tree_flatten(model.parameters())}
+    missing, extra = sorted(expected - set(weights)), sorted(set(weights) - expected)
+    if missing or extra:
+        raise RuntimeError(
+            f"Text-encoder weight mismatch (missing={len(missing)}, extra={len(extra)}); "
+            f"missing_head={missing[:4]} extra_head={extra[:4]}")
     model.update(tree_unflatten(list(weights.items())))
     mx.eval(model.parameters())
     return model, len(weights)
@@ -161,6 +173,12 @@ class Qwen3VLConditioner:
         from transformers import AutoTokenizer
 
         self.tokenizer = AutoTokenizer.from_pretrained(f"{repo}/tokenizer")
+        # guard the hardcoded prefix/suffix token counts (used to slice hidden states) against
+        # tokenizer drift — a changed template/version would silently misalign the conditioning
+        np_, ns_ = len(self.tokenizer(PREFIX)["input_ids"]), len(self.tokenizer(SUFFIX)["input_ids"])
+        if np_ != PREFIX_START_IDX or ns_ != SUFFIX_START_IDX:
+            raise RuntimeError(f"tokenizer drift: prefix={np_} (expected {PREFIX_START_IDX}), "
+                               f"suffix={ns_} (expected {SUFFIX_START_IDX})")
         self.max_length = max_length
         self.dtype = dtype
         self.model, self.nloaded = load_text_encoder(repo, dtype)

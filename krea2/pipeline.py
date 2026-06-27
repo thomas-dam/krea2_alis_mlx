@@ -63,6 +63,10 @@ def _http_download(repo: str, filename: str, dest_root: str) -> str:
                     print(f"\r  ↓ {filename}  {done // 1048576} / {total // 1048576} MB", end="", flush=True)
     if total:
         print()
+    # only commit a complete file; keep the .part on a short read so the next run resumes it
+    if total and done != total:
+        raise IOError(f"Incomplete download of {filename}: got {done} of {total} bytes. "
+                      "Re-run to resume (the partial file is kept).")
     os.replace(tmp, dest)
     return dest
 
@@ -159,6 +163,17 @@ class Krea2Pipeline:
         self.encoder = Qwen3VLConditioner(base, dtype=mx.bfloat16)
 
     def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1, step_callback=None):
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("prompt must be a non-empty string.")
+        width, height, steps, num_images = int(width), int(height), int(steps), int(num_images)
+        # the VAE downsamples ×8 and the DiT patchifies ×2 → dims must be multiples of 16
+        for name, v in (("width", width), ("height", height)):
+            if v < 256 or v > 2048 or v % 16:
+                raise ValueError(f"{name} must be a multiple of 16 in [256, 2048], got {v}.")
+        if not 1 <= steps <= 50:
+            raise ValueError(f"steps must be in [1, 50], got {steps}.")
+        if not 1 <= num_images <= 8:
+            raise ValueError(f"num_images must be in [1, 8], got {num_images}.")
         dec = sample(self.transformer, self.vae, self.encoder, [prompt] * num_images,
                      width=width, height=height, steps=steps, guidance=0.0, seed=seed,
                      step_callback=step_callback)

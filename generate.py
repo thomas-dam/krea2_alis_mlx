@@ -38,16 +38,21 @@ def main():
         precision, tpath = resolve_weights(here, precision=precision, download=True)
 
     pipe = Krea2Pipeline(transformer_path=tpath, precision=precision)
-    images = pipe.generate(args.prompt, width=args.width, height=args.height,
-                           steps=args.steps, seed=args.seed, num_images=args.num_images)
+    try:
+        images = pipe.generate(args.prompt, width=args.width, height=args.height,
+                               steps=args.steps, seed=args.seed, num_images=args.num_images)
+    except ValueError as e:
+        ap.error(str(e))  # clean "generate.py: error: ..." instead of a traceback
     from krea2 import safety
     images, flagged = safety.apply(images, enabled=not args.no_safety)
     if flagged:
         print(f"⚠  {flagged} image(s) redacted by the NSFW safety filter (disable with --no-safety)")
     base, ext = os.path.splitext(args.out)
     ext = ext or ".png"
+    out_dir = os.path.dirname(os.path.abspath(args.out))
+    os.makedirs(out_dir, exist_ok=True)
     for i, im in enumerate(images):
-        path = args.out if len(images) == 1 else f"{base}_{i}{ext}"
+        path = args.out if len(images) == 1 else f"{base}_{i + 1}{ext}"  # foo_1.png, foo_2.png …
         im.save(path)
         print(f"saved {path}")
 
