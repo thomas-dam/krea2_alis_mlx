@@ -46,11 +46,16 @@ def _http_download(repo: str, filename: str, dest_root: str) -> str:
     if os.path.exists(dest) and total and os.path.getsize(dest) == total:
         return dest
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    tmp, done = dest + ".part", 0
-    with requests.get(url, stream=True, timeout=(30, 120), allow_redirects=True) as r:
+    tmp = dest + ".part"
+    pos = os.path.getsize(tmp) if os.path.exists(tmp) else 0  # resume a partial download
+    headers = {"Range": f"bytes={pos}-"} if pos else {}
+    with requests.get(url, headers=headers, stream=True, timeout=(30, 120), allow_redirects=True) as r:
         r.raise_for_status()
-        total = total or int(r.headers.get("content-length") or 0)
-        with open(tmp, "wb") as f:
+        resume = bool(pos) and r.status_code == 206  # 206 => server honored the range
+        pos = pos if resume else 0
+        total = total or (pos + int(r.headers.get("content-length") or 0))
+        done = pos
+        with open(tmp, "ab" if resume else "wb") as f:
             for chunk in r.iter_content(4 << 20):
                 f.write(chunk)
                 done += len(chunk)

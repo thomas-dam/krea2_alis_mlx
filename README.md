@@ -19,7 +19,9 @@ original PyTorch** (end-to-end pixel cosine **1.000000**).
 
 ## ⚡ Quick start (beginners — copy & paste)
 
-**You need:** an **Apple-silicon Mac** (M1/M2/M3/M4), **Python 3.10+**, and ~20 GB free disk.
+**You need:** an **Apple-silicon Mac** (M1/M2/M3/M4) with **≥ 24 GB unified memory** (**32 GB+
+recommended**; 16 GB will run out of memory at 1024² — drop to `--width/--height 512` if you must),
+**Python 3.10+**, and **~25 GB free disk** for the 8-bit build (bf16 needs ~40 GB).
 
 > 🍎 **On macOS the commands are `python3` / `pip3`, not `python` / `pip`.** No Python yet?
 > Install it from [python.org](https://www.python.org/downloads/macos/) (or `brew install python`),
@@ -36,9 +38,9 @@ python3 app.py
 
 Your browser opens at **http://localhost:7860** — type a prompt, click **Generate**. ✨
 
-> **First run** downloads the model (8-bit, ~14 GB) + the text encoder/VAE automatically,
-> so it takes a few minutes. After that it's cached and instant to start. A 1024×1024 image
-> takes ~50 s (8 steps).
+> **First run** downloads the model (8-bit, ~14 GB) + the text encoder/VAE + a small NSFW
+> safety classifier automatically, so it takes a few minutes. After that it's cached and instant
+> to start. A 1024×1024 image takes **~50 s on an M3 Ultra** (8 steps; slower chips take longer).
 
 ### Option B — Command line
 
@@ -67,7 +69,7 @@ you pick:
 > **What about bf16?** There's **no separate bf16 build** — `--precision bf16` runs **Krea's
 > original weights** (`turbo.safetensors`, ~24 GB) through this *same* MLX code, pulled from
 > [`krea/Krea-2-Turbo`](https://huggingface.co/krea/Krea-2-Turbo). It's the full-precision
-> reference, but the quantized builds are near-lossless **and every build runs at the same speed**
+> reference, but the quantized builds are near-lossless **and all builds run at ≈ the same speed**
 > (generation is attention-bound — quantization only shrinks the download, it doesn't speed things
 > up). So 8-bit / mixed-4/8 are the practical picks; reach for bf16 only to double-check fidelity.
 
@@ -87,6 +89,11 @@ Every stage was cross-checked against the [original PyTorch code](https://github
 | VAE (Qwen-Image) | decoded pixels | **cos 0.9994** |
 | **Full pipeline** | pixels, identical noise | **cos 1.000000** |
 
+> Why is the VAE's 0.9994 *lower* than the full pipeline's 1.000000? The VAE was tested on a
+> **random** latent — an out-of-distribution torture test that amplifies tiny float differences at
+> the saturating extremes (and the sampler clamps those anyway). On the **real** latents the
+> pipeline actually produces, agreement rounds to 1.000000.
+
 Reproduce it yourself: see [`validation/`](validation/).
 
 ---
@@ -98,6 +105,8 @@ Reproduce it yourself: see [`validation/`](validation/).
 - **Text encoder** Qwen3-VL-4B (text-only), pure MLX.
 - **VAE** Qwen-Image VAE — reused from [mflux](https://github.com/filipstrand/mflux).
 - **Sampler** flow-matching Euler, 8-step Turbo (no CFG).
+- **Safety** NSFW content filter (Falconsai/nsfw_image_detection) — on by default; redacts
+  flagged outputs (see *Safety* below).
 
 `krea2/` is the implementation; `app.py` / `generate.py` are the entry points; `validation/`
 is the verification harness; `docs/PORT_PLAN.md` is the build journal.
@@ -113,14 +122,33 @@ is the verification harness; `docs/PORT_PLAN.md` is the build journal.
 - **Generation feels slow** → a 1024² image is ~50 s (8 steps) per image; the web UI shows a
   live step progress bar. Quantization doesn't speed generation up (it's attention-bound) — it
   only shrinks the download.
+- **`Address already in use` (port 7860)** → another app has the port. Run on another one:
+  `GRADIO_SERVER_PORT=7861 python3 app.py`.
+- **Out of memory / very slow + swapping** → you likely have < 24 GB RAM; use `--width/--height 512`
+  or the smaller `mixed-4/8` build.
+
+## 🛡️ Safety &amp; responsible use
+
+An NSFW content filter (**[Falconsai/nsfw_image_detection](https://huggingface.co/Falconsai/nsfw_image_detection)**,
+one of the classifiers named in the license) runs **by default** and **redacts** explicit outputs.
+It's tuned not to flag ordinary photos (e.g. swimwear). Turn it off with the web-UI checkbox,
+`--no-safety` (CLI), or `KREA2_DISABLE_SAFETY=1`; adjust the cutoff with `KREA2_SAFETY_THRESHOLD`
+(default 0.85).
+
+The Krea 2 Community License **requires** deployments to implement reasonable content filtering
+and to disclose AI-generated content where required by law. If you disable the filter or deploy
+publicly, that obligation is **yours**. Do not generate or distribute non-consensual, sexual-abuse,
+or otherwise illegal content.
 
 ## 📜 License
 
 This code is an independent MLX implementation. The **model weights** are a modified
 derivative of [`krea/Krea-2-Turbo`](https://huggingface.co/krea/Krea-2-Turbo) under the
 **[Krea 2 Community License](https://krea.ai/krea-2-licensing)** (see [`LICENSE`](LICENSE),
-[`NOTICE`](NOTICE)). Notably: commercial use requires annual revenue **under $1M USD**, you must
-implement reasonable content filtering, and it's **not endorsed by Krea**. You own the images you generate.
+[`NOTICE`](NOTICE)). Notably: commercial use requires total annual revenue **under $1M USD**
+(otherwise an enterprise license from Krea), deployments must implement reasonable content
+filtering (a built-in NSFW filter is included — see *Safety* above), and it's **not endorsed by
+Krea**. You own the images you generate.
 
 ## 🙏 Credits
 

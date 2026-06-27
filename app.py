@@ -34,7 +34,7 @@ def _pipe(precision):
     return _PIPE
 
 
-def generate(prompt, model, size, steps, seed, num_images, progress=gr.Progress()):
+def generate(prompt, model, size, steps, seed, num_images, safety_on, progress=gr.Progress()):
     if not prompt or not prompt.strip():
         raise gr.Error("Enter a prompt.")
     progress(0, desc="Loading model… (first run downloads weights — a few minutes)")
@@ -44,8 +44,13 @@ def generate(prompt, model, size, steps, seed, num_images, progress=gr.Progress(
     def cb(step, total):
         progress(step / total, desc=f"Generating · step {step}/{total}")
 
-    return pipe.generate(prompt.strip(), width=s, height=s, steps=int(steps),
+    imgs = pipe.generate(prompt.strip(), width=s, height=s, steps=int(steps),
                          seed=int(seed), num_images=int(num_images), step_callback=cb)
+    if safety_on:
+        progress(1.0, desc="Safety check…")
+        from krea2 import safety
+        imgs, _ = safety.apply(imgs, enabled=True)
+    return imgs
 
 
 with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
@@ -64,6 +69,7 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             with gr.Row():
                 seed = gr.Number(value=0, label="Seed", precision=0)
                 num_images = gr.Slider(1, 4, value=1, step=1, label="Images")
+            safety_chk = gr.Checkbox(value=True, label="NSFW safety filter (recommended; required by the license for public deployments)")
             btn = gr.Button("Generate", variant="primary")
             gr.Examples(
                 [["a fox in the snow"],
@@ -73,7 +79,7 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             )
         with gr.Column(scale=1):
             gallery = gr.Gallery(label="Output", columns=2, height=560, object_fit="contain")
-    btn.click(generate, [prompt, model, size, steps, seed, num_images], gallery)
+    btn.click(generate, [prompt, model, size, steps, seed, num_images, safety_chk], gallery)
 
 
 if __name__ == "__main__":

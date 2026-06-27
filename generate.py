@@ -27,6 +27,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--num-images", type=int, default=1)
     ap.add_argument("--out", default="out.png")
+    ap.add_argument("--no-safety", action="store_true",
+                    help="disable the NSFW content filter (on by default; see the license)")
     args = ap.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +40,10 @@ def main():
     pipe = Krea2Pipeline(transformer_path=tpath, precision=precision)
     images = pipe.generate(args.prompt, width=args.width, height=args.height,
                            steps=args.steps, seed=args.seed, num_images=args.num_images)
+    from krea2 import safety
+    images, flagged = safety.apply(images, enabled=not args.no_safety)
+    if flagged:
+        print(f"⚠  {flagged} image(s) redacted by the NSFW safety filter (disable with --no-safety)")
     base, ext = os.path.splitext(args.out)
     ext = ext or ".png"
     for i, im in enumerate(images):
