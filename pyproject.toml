@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "krea2-alis-mlx"
-version = "0.1.1"
+version = "0.1.2"
 description = "Krea-2-Turbo (12.9B text-to-image MMDiT) ported to Apple MLX — pure-MLX, numerically verified faithful to PyTorch."
 readme = "README.md"
 requires-python = ">=3.10"            # uses PEP 604 `str | None` annotations at runtime
