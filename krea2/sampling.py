@@ -41,6 +41,10 @@ def timesteps(seq_len, steps, x1, x2, y1=0.5, y2=1.15, sigma=1.0, mu=None):
     if mu is None:
         slope = (y2 - y1) / (x2 - x1)
         mu = slope * seq_len + (y1 - slope * x1)
+        # the (x1,y1)->(x2,y2) line is calibrated only up to maxres; above it (e.g. 2K, seq_len > x2)
+        # it extrapolates past y2. Krea's own 2K recipe pins --mu 1.15 (== y2), so cap here to match
+        # instead of over-shifting. Leaves <=maxres unchanged (mu <= y2 there).
+        mu = min(mu, y2)
     with np.errstate(divide="ignore"):
         ts = math.exp(mu) / (math.exp(mu) + (1.0 / ts - 1.0) ** sigma)
     return ts.tolist()
