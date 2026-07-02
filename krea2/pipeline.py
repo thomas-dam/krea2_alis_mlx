@@ -175,7 +175,8 @@ class Krea2Pipeline:
         self.vae = _load_vae(base)
         self.encoder = Qwen3VLConditioner(base, dtype=mx.bfloat16)
 
-    def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1, step_callback=None):
+    def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1,
+                 init_image=None, strength=0.6, step_callback=None):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string.")
         try:  # uniform ValueError for None / non-numeric / inf / nan (not TypeError / OverflowError)
@@ -193,7 +194,23 @@ class Krea2Pipeline:
             raise ValueError(f"num_images must be in [1, 8], got {num_images}.")
         if not 0 <= seed < 2**64:  # mx.random.seed wants a non-negative uint64 (else a bare TypeError)
             raise ValueError(f"seed must be in [0, 2^64), got {seed}.")
+        init_latent = None
+        if init_image is not None:
+            try:
+                strength = float(strength)
+            except (TypeError, ValueError):
+                raise ValueError("strength must be a number in (0, 1].") from None
+            if not 0.0 < strength <= 1.0:
+                raise ValueError(f"strength must be in (0, 1], got {strength}.")
+            # img2img: encode the init image (a file path or PIL image) with the same Qwen VAE the
+            # sampler decodes with — the returned latents are mean/std-normalized, i.e. already in
+            # the sampler's latent space. Scaled to (width, height) before encoding.
+            from mflux.models.common.latent_creator.latent_creator import LatentCreator
+            init_latent = LatentCreator.encode_image(
+                vae=self.vae, image_path=init_image, height=height, width=width)
+            mx.eval(init_latent)
         dec = sample(self.transformer, self.vae, self.encoder, [prompt] * num_images,
                      width=width, height=height, steps=steps, guidance=0.0, seed=seed,
+                     init_latent=init_latent, strength=strength if init_latent is not None else 1.0,
                      step_callback=step_callback)
         return to_pil(dec)

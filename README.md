@@ -55,6 +55,18 @@ python3 generate.py "a red fox in the snow, photorealistic" --out fox.png
 
 Useful flags: `--width/--height 512|768|1024`, `--steps 8`, `--seed 0`, `--num-images 2`.
 
+**img2img** — start from one of your own pictures instead of noise:
+
+```bash
+python3 generate.py "three green apples on a white plate" --init-image photo.png --strength 0.6
+```
+
+`--strength` sets how much to change the input, in (0, 1]: ~0.3 keeps the photo nearly intact,
+0.6 rebalances it toward the prompt, 0.9 mostly re-imagines it (1.0 = plain txt2img). The input is
+scaled to `--width/--height`, encoded with the same Qwen VAE the sampler decodes with, and the
+sampler enters the rectified-flow path at the matching timestep — lower strengths also run fewer
+steps, so they're faster.
+
 > **Choose your build:** in the web UI, pick **8-bit** or **mixed-4/8** from the **Model**
 > dropdown — it downloads the chosen one on first use. On the CLI, add `--precision mixed-4-8`
 > (or `8bit`). Default is 8-bit.

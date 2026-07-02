@@ -67,6 +67,8 @@ def sample(
     y2=1.15,
     mu=None,
     init_noise=None,   # (n,16,H/8,W/8) to match a PT run; else MLX RNG
+    init_latent=None,  # img2img: clean VAE latents ((n or 1),16,H/8,W/8); enter the schedule at sigma≈strength
+    strength=1.0,      # img2img: 1.0 = ignore init_latent (pure txt2img), →0 = barely change the input
     dtype=mx.bfloat16,
     step_callback=None,  # called as step_callback(step, total) after each denoising step
 ):
@@ -89,16 +91,31 @@ def sample(
     txtlen = ctx.shape[1]
     h_, w_ = lat_h // patch, lat_w // patch
 
+    x1 = (minres // align) ** 2
+    x2 = (maxres // align) ** 2
+    ts = timesteps(h_ * w_, steps, x1, x2, y1=y1, y2=y2, mu=mu)
+
+    # img2img: the model integrates the straight (rectified-flow) path x_t = t*noise + (1-t)*x0 from
+    # t=1 down to 0. Instead of starting at t=1, enter the path at the first scheduled sigma <=
+    # strength (always leaving >= 1 step), blending the clean latents with this run's start noise.
+    start = 0
+    if init_latent is not None and strength < 1.0:
+        z0 = mx.array(init_latent).astype(dtype)
+        if z0.shape[0] == 1 and n > 1:
+            z0 = mx.broadcast_to(z0, noise.shape)
+        if z0.shape != noise.shape:
+            raise ValueError(f"init_latent shape {z0.shape} does not match latents {noise.shape}.")
+        start = next((i for i, t in enumerate(ts[:-1]) if t <= strength), len(ts) - 2)
+        sigma = ts[start]
+        noise = sigma * noise + (1.0 - sigma) * z0
+
     img = patchify(noise, patch)  # (n, h_*w_, 64)
     pos = build_positions(n, txtlen, h_, w_)
     full_mask = mx.concatenate([mask, mx.ones((n, h_ * w_))], axis=1)
 
-    x1 = (minres // align) ** 2
-    x2 = (maxres // align) ** 2
-    ts = timesteps(img.shape[1], steps, x1, x2, y1=y1, y2=y2, mu=mu)
-
-    total = len(ts) - 1
-    for i, (tc, tp) in enumerate(zip(ts[:-1], ts[1:])):
+    pairs = list(zip(ts[:-1], ts[1:]))[start:]
+    total = len(pairs)
+    for i, (tc, tp) in enumerate(pairs):
         t = mx.full((n,), tc, dtype=dtype)
         v = transformer(img, ctx, t, pos, full_mask)
         if cfg:

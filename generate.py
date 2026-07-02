@@ -26,6 +26,10 @@ def main():
     ap.add_argument("--steps", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--num-images", type=int, default=1)
+    ap.add_argument("--init-image", default=None,
+                    help="img2img: path to an input image to transform (scaled to --width/--height)")
+    ap.add_argument("--strength", type=float, default=0.6,
+                    help="img2img: how much to change the input, (0, 1] — higher = more change (default 0.6)")
     ap.add_argument("--out", default="out.png")
     ap.add_argument("--no-safety", action="store_true",
                     help="disable the NSFW content filter (on by default; see the license)")
@@ -40,7 +44,8 @@ def main():
     pipe = Krea2Pipeline(transformer_path=tpath, precision=precision)
     try:
         images = pipe.generate(args.prompt, width=args.width, height=args.height,
-                               steps=args.steps, seed=args.seed, num_images=args.num_images)
+                               steps=args.steps, seed=args.seed, num_images=args.num_images,
+                               init_image=args.init_image, strength=args.strength)
     except ValueError as e:
         ap.error(str(e))  # clean "generate.py: error: ..." instead of a traceback
     from krea2 import safety
