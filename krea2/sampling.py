@@ -98,6 +98,8 @@ def sample(
     # img2img: the model integrates the straight (rectified-flow) path x_t = t*noise + (1-t)*x0 from
     # t=1 down to 0. Instead of starting at t=1, enter the path at the first scheduled sigma <=
     # strength (always leaving >= 1 step), blending the clean latents with this run's start noise.
+    if init_latent is not None and not 0.0 < strength <= 1.0:   # pipeline validates; guard direct callers too
+        raise ValueError(f"strength must be in (0, 1], got {strength}.")
     start = 0
     if init_latent is not None and strength < 1.0:
         z0 = mx.array(init_latent).astype(dtype)
