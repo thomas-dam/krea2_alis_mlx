@@ -107,8 +107,12 @@ def sample(
             z0 = mx.broadcast_to(z0, noise.shape)
         if z0.shape != noise.shape:
             raise ValueError(f"init_latent shape {z0.shape} does not match latents {noise.shape}.")
+        # strengths below the smallest scheduled sigma round UP to it (the len-2 default) so at
+        # least one step always runs — at 8 steps that floor is ~0.2-0.3 depending on resolution.
         start = next((i for i, t in enumerate(ts[:-1]) if t <= strength), len(ts) - 2)
         sigma = ts[start]
+        if sigma >= 1.0:  # only possible at steps=1: the schedule has no entry point below t=1
+            raise ValueError("img2img needs steps >= 2 — a 1-step schedule has no timestep at or below strength.")
         noise = sigma * noise + (1.0 - sigma) * z0
 
     img = patchify(noise, patch)  # (n, h_*w_, 64)

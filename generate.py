@@ -35,6 +35,14 @@ def main():
                     help="disable the NSFW content filter (on by default; see the license)")
     args = ap.parse_args()
 
+    if args.init_image:  # fail on a bad path/file BEFORE loading ~14 GB of weights
+        from PIL import Image, UnidentifiedImageError
+        try:
+            with Image.open(args.init_image) as im:
+                im.verify()
+        except (OSError, UnidentifiedImageError, ValueError) as e:
+            ap.error(f"--init-image: cannot read {args.init_image!r}: {e}")
+
     here = os.path.dirname(os.path.abspath(__file__))
     precision, tpath = args.precision, args.transformer
     if precision != "bf16" and tpath is None:

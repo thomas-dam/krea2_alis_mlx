@@ -63,9 +63,12 @@ python3 generate.py "three green apples on a white plate" --init-image photo.png
 
 `--strength` sets how much to change the input, in (0, 1]: ~0.3 keeps the photo nearly intact,
 0.6 rebalances it toward the prompt, 0.9 mostly re-imagines it (1.0 = plain txt2img). The input is
-scaled to `--width/--height`, encoded with the same Qwen VAE the sampler decodes with, and the
-sampler enters the rectified-flow path at the matching timestep — lower strengths also run fewer
-steps, so they're faster.
+scaled to `--width/--height` (match the aspect ratio to avoid stretching), encoded with the same
+Qwen VAE the sampler decodes with, and the sampler enters the rectified-flow path at the nearest
+scheduled timestep ≤ strength — lower strengths also run fewer steps, so they're faster. Because
+the entry points come from the step schedule, granularity is limited at low step counts: with
+`--steps 8` the lowest effective strength is ~0.2–0.3 (values below it round up), and img2img
+needs `--steps` ≥ 2.
 
 > **Choose your build:** in the web UI, pick **8-bit** or **mixed-4/8** from the **Model**
 > dropdown — it downloads the chosen one on first use. On the CLI, add `--precision mixed-4-8`

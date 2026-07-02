@@ -202,13 +202,21 @@ class Krea2Pipeline:
                 raise ValueError("strength must be a number in (0, 1].") from None
             if not 0.0 < strength <= 1.0:
                 raise ValueError(f"strength must be in (0, 1], got {strength}.")
-            # img2img: encode the init image (a file path or PIL image) with the same Qwen VAE the
-            # sampler decodes with — the returned latents are mean/std-normalized, i.e. already in
-            # the sampler's latent space. Scaled to (width, height) before encoding.
-            from mflux.models.common.latent_creator.latent_creator import LatentCreator
-            init_latent = LatentCreator.encode_image(
-                vae=self.vae, image_path=init_image, height=height, width=width)
-            mx.eval(init_latent)
+            if strength < 1.0:  # at 1.0 the image is ignored by design — don't pay for the encode
+                # img2img: encode the init image (a file path or PIL image) with the same Qwen VAE
+                # the sampler decodes with — the returned latents are mean/std-normalized, i.e.
+                # already in the sampler's latent space. Scaled to (width, height) before encoding.
+                from mflux.models.common.latent_creator.latent_creator import LatentCreator
+                tiling = None
+                if width * height >= 1536 * 1536:  # bound the encoder's full-res activations on big inputs
+                    from mflux.models.common.vae.tiling_config import TilingConfig
+                    tiling = TilingConfig()
+                init_latent = LatentCreator.encode_image(
+                    vae=self.vae, image_path=init_image, height=height, width=width,
+                    tiling_config=tiling)
+                if init_latent.ndim == 5:  # the tiled path keeps the temporal dim — the sampler is 4D
+                    init_latent = init_latent[:, :, 0]
+                mx.eval(init_latent)
         dec = sample(self.transformer, self.vae, self.encoder, [prompt] * num_images,
                      width=width, height=height, steps=steps, guidance=0.0, seed=seed,
                      init_latent=init_latent, strength=strength if init_latent is not None else 1.0,
