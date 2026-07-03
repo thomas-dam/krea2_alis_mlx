@@ -20,7 +20,6 @@ def generate(
     prompt,
     model,
     lora_path,
-    lora_strength,
     reference_image,
     reference_strength,
     aspect_ratio,
@@ -42,7 +41,7 @@ def generate(
             prompt=prompt,
             model=model,
             lora_path=lora_path,
-            lora_strength=float(lora_strength),
+            lora_strength=1.0,
             init_image=reference_image,
             init_strength=float(reference_strength),
             aspect_ratio=aspect_ratio,
@@ -82,7 +81,6 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")
             model = gr.Dropdown(MODELS, value=default_prec, label="Model")
             lora_path = gr.Textbox(label="LoRA path", placeholder="/path/to/krea2_lora.safetensors")
-            lora_strength = gr.Slider(0, 2, value=1, step=0.05, label="LoRA strength")
             reference_image = gr.Image(label="Reference image", type="pil")
             reference_strength = gr.Slider(0.05, 1.0, value=0.6, step=0.05, label="Reference change")
             with gr.Row():
@@ -108,7 +106,6 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             prompt,
             model,
             lora_path,
-            lora_strength,
             reference_image,
             reference_strength,
             aspect_ratio,
