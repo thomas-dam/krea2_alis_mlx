@@ -14,7 +14,7 @@ from mlx import nn
 from mlx.utils import tree_map
 
 from .quant_recipes import mixed_4_8, quantize_bulk
-from .lora import apply_lora, set_lora_scale
+from .lora import apply_lora, fuse_lora, set_lora_scale
 from .sampling import sample, to_pil
 from .text_encoder import Qwen3VLConditioner
 from .transformer import Krea2Config, SingleStreamDiT
@@ -161,6 +161,8 @@ class Krea2Pipeline:
         base_dir: str | None = None,
         lora_path: str | None = None,
         lora_scale: float = 1.0,
+        fuse_lora_adapters: bool = True,
+        requantize_lora: bool = True,
     ):
         base = base_dir or _base_dir()
         m = SingleStreamDiT(Krea2Config())
@@ -179,6 +181,7 @@ class Krea2Pipeline:
         else:
             raise ValueError(f"precision must be '8bit', 'mixed-4-8' or 'bf16', got {precision}")
         self.lora_report = apply_lora(m, lora_path, scale=lora_scale) if lora_path else None
+        self.fused_lora_count = fuse_lora(m, requantize=requantize_lora) if self.lora_report and fuse_lora_adapters else 0
         mx.eval(m.parameters())
         self.transformer = m
         self.vae = _load_vae(base)

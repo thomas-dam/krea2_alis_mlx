@@ -47,6 +47,7 @@ MODELS = [("8-bit · best quality (14 GB)", "8bit"), ("mixed-4/8 · smaller (9.8
 _PIPE = None
 _PIPE_PREC = None
 _PIPE_LORA = None
+_PIPE_LORA_SCALE = None
 _PIPE_LOCK = threading.Lock()
 
 
@@ -70,15 +71,16 @@ def normalize_lora_path(lora_path: str | None) -> str | None:
     return os.path.expanduser(lora_path.strip()) if lora_path and lora_path.strip() else None
 
 
-def get_pipeline(precision: str, lora_path: str | None = None) -> Krea2Pipeline:
-    """Return a cached pipeline for precision + LoRA path."""
-    global _PIPE, _PIPE_PREC, _PIPE_LORA
+def get_pipeline(precision: str, lora_path: str | None = None, lora_scale: float = 1.0) -> Krea2Pipeline:
+    """Return a cached pipeline for precision + LoRA path + fused LoRA scale."""
+    global _PIPE, _PIPE_PREC, _PIPE_LORA, _PIPE_LORA_SCALE
     lora_path = normalize_lora_path(lora_path)
+    lora_scale = float(lora_scale) if lora_path else None
     if lora_path and not os.path.exists(lora_path):
         raise ValueError(f"LoRA file not found: {lora_path}")
-    if _PIPE is None or _PIPE_PREC != precision or _PIPE_LORA != lora_path:
+    if _PIPE is None or _PIPE_PREC != precision or _PIPE_LORA != lora_path or _PIPE_LORA_SCALE != lora_scale:
         prec, path = resolve_weights(str(ROOT), precision=precision, download=True)
-        _PIPE, _PIPE_PREC, _PIPE_LORA = None, None, None
+        _PIPE, _PIPE_PREC, _PIPE_LORA, _PIPE_LORA_SCALE = None, None, None, None
         gc.collect()
         import mlx.core as mx
 
@@ -88,9 +90,11 @@ def get_pipeline(precision: str, lora_path: str | None = None) -> Krea2Pipeline:
             precision=prec,
             base_dir=os.environ.get("KREA2_BASE_DIR"),
             lora_path=lora_path,
+            lora_scale=lora_scale,
         )
         _PIPE_PREC = prec
         _PIPE_LORA = lora_path
+        _PIPE_LORA_SCALE = lora_scale
     return _PIPE
 
 
@@ -188,8 +192,7 @@ def generate_and_save(
     )
     with _PIPE_LOCK:
         log.info("job %s started", job_id)
-        pipe = get_pipeline(model, lora_path)
-        pipe.set_lora_scale(float(lora_strength))
+        pipe = get_pipeline(model, lora_path, float(lora_strength))
         prepared_at = time.perf_counter()
 
         def on_step(step: int, total: int):

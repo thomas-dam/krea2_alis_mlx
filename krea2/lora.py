@@ -34,6 +34,52 @@ class LoRALinear(nn.Module):
         delta = mx.matmul(mx.matmul(x.astype(self.down.dtype), self.down.T), self.up.T)
         return out + (delta * self.scale * self.alpha_scale).astype(dt)
 
+    def _delta_weight(self) -> mx.array:
+        return mx.matmul(self.up, self.down) * self.scale * self.alpha_scale
+
+    def fuse(self, *, requantize: bool = True) -> nn.Module:
+        """Fold the LoRA delta into the wrapped Linear/QuantizedLinear weight."""
+        if isinstance(self.base, nn.Linear):
+            fused = nn.Linear(
+                int(self.base.weight.shape[1]),
+                int(self.base.weight.shape[0]),
+                bias="bias" in self.base,
+            )
+            fused.weight = (
+                self.base.weight.astype(mx.float32) + self._delta_weight().astype(mx.float32)
+            ).astype(self.base.weight.dtype)
+            if "bias" in self.base:
+                fused.bias = self.base.bias
+            return fused
+
+        if isinstance(self.base, nn.QuantizedLinear):
+            out_dims, packed_in_dims = self.base.weight.shape
+            in_dims = int(packed_in_dims) * 32 // int(self.base.bits)
+            base_weight = mx.dequantize(
+                self.base.weight,
+                self.base.scales,
+                self.base.biases,
+                self.base.group_size,
+                self.base.bits,
+                mode=self.base.mode,
+            )
+            fused = nn.Linear(in_dims, int(out_dims), bias="bias" in self.base)
+            fused.weight = (
+                base_weight.astype(mx.float32) + self._delta_weight().astype(mx.float32)
+            ).astype(mx.bfloat16)
+            if "bias" in self.base:
+                fused.bias = self.base.bias
+            if not requantize:
+                return fused
+            return nn.QuantizedLinear.from_linear(
+                fused,
+                group_size=self.base.group_size,
+                bits=self.base.bits,
+                mode=self.base.mode,
+            )
+
+        raise TypeError(f"Cannot fuse LoRA into {type(self.base).__name__}.")
+
 
 def _module_at(root: nn.Module, path: str):
     cur = root
@@ -46,6 +92,8 @@ def _module_at(root: nn.Module, path: str):
 
 
 def _parent_and_name(root: nn.Module, path: str):
+    if "." not in path:
+        return root, path
     parent_path, name = path.rsplit(".", 1)
     return _module_at(root, parent_path), name
 
@@ -151,3 +199,15 @@ def set_lora_scale(module: nn.Module, scale: float) -> int:
             child.set_scale(scale)
             count += 1
     return count
+
+
+def fuse_lora(module: nn.Module, *, requantize: bool = True) -> int:
+    """Replace every LoRALinear under module with a fused Linear/QuantizedLinear."""
+    fused = 0
+    for path, child in list(module.named_modules()):
+        if path and isinstance(child, LoRALinear):
+            _set_module(module, path, child.fuse(requantize=requantize))
+            fused += 1
+    if fused:
+        mx.eval(module.parameters())
+    return fused
