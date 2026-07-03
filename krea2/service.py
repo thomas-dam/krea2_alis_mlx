@@ -101,6 +101,8 @@ def save_outputs(
     model: str,
     lora_path: str | None,
     lora_strength: float,
+    init_image_used: bool,
+    init_strength: float,
     aspect_ratio: str,
     width: int,
     height: int,
@@ -117,6 +119,8 @@ def save_outputs(
         "model": model,
         "lora_path": lora_path or None,
         "lora_strength": float(lora_strength),
+        "init_image_used": bool(init_image_used),
+        "init_strength": float(init_strength),
         "aspect_ratio": aspect_ratio,
         "width": width,
         "height": height,
@@ -149,6 +153,8 @@ def generate_and_save(
     model: str = "8bit",
     lora_path: str | None = None,
     lora_strength: float = 1.0,
+    init_image=None,
+    init_strength: float = 0.6,
     aspect_ratio: str = "1:1",
     steps: int = 8,
     seed: int = 0,
@@ -167,10 +173,11 @@ def generate_and_save(
     width, height = ASPECT_DIMS[aspect_ratio]
     run_started = time.perf_counter()
     log.info(
-        "job %s queued model=%s lora=%s ratio=%s size=%sx%s steps=%s seed=%s images=%s safety=%s",
+        "job %s queued model=%s lora=%s init=%s ratio=%s size=%sx%s steps=%s seed=%s images=%s safety=%s",
         job_id,
         model,
         lora_path or "none",
+        init_image is not None,
         aspect_ratio,
         width,
         height,
@@ -197,6 +204,8 @@ def generate_and_save(
             steps=int(steps),
             seed=int(seed),
             num_images=int(num_images),
+            init_image=init_image,
+            strength=float(init_strength),
             step_callback=on_step,
         )
         generated_at = time.perf_counter()
@@ -222,6 +231,8 @@ def generate_and_save(
             model=model,
             lora_path=lora_path,
             lora_strength=lora_strength,
+            init_image_used=init_image is not None,
+            init_strength=init_strength,
             aspect_ratio=aspect_ratio,
             width=width,
             height=height,

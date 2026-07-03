@@ -16,7 +16,20 @@ import gradio as gr
 from krea2.service import ASPECT_RATIOS, MODELS, default_precision, generate_and_save
 
 
-def generate(prompt, model, lora_path, lora_strength, aspect_ratio, steps, seed, num_images, safety_on, progress=gr.Progress()):
+def generate(
+    prompt,
+    model,
+    lora_path,
+    lora_strength,
+    reference_image,
+    reference_strength,
+    aspect_ratio,
+    steps,
+    seed,
+    num_images,
+    safety_on,
+    progress=gr.Progress(),
+):
     if not prompt or not prompt.strip():
         raise gr.Error("Enter a prompt.")
     try:
@@ -30,6 +43,8 @@ def generate(prompt, model, lora_path, lora_strength, aspect_ratio, steps, seed,
             model=model,
             lora_path=lora_path,
             lora_strength=float(lora_strength),
+            init_image=reference_image,
+            init_strength=float(reference_strength),
             aspect_ratio=aspect_ratio,
             steps=int(steps),
             seed=int(seed),
@@ -68,6 +83,8 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             model = gr.Dropdown(MODELS, value=default_prec, label="Model")
             lora_path = gr.Textbox(label="LoRA path", placeholder="/path/to/krea2_lora.safetensors")
             lora_strength = gr.Slider(0, 2, value=1, step=0.05, label="LoRA strength")
+            reference_image = gr.Image(label="Reference image", type="pil")
+            reference_strength = gr.Slider(0.05, 1.0, value=0.6, step=0.05, label="Reference change")
             with gr.Row():
                 aspect_ratio = gr.Dropdown(ASPECT_RATIOS, value="1:1", label="Aspect ratio")
                 steps = gr.Slider(4, 12, value=8, step=1, label="Steps")
@@ -87,7 +104,19 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             saved_paths = gr.Textbox(label="Saved files", lines=5, interactive=False)
     btn.click(
         generate,
-        [prompt, model, lora_path, lora_strength, aspect_ratio, steps, seed, num_images, safety_chk],
+        [
+            prompt,
+            model,
+            lora_path,
+            lora_strength,
+            reference_image,
+            reference_strength,
+            aspect_ratio,
+            steps,
+            seed,
+            num_images,
+            safety_chk,
+        ],
         [gallery, saved_paths],
     )
 
