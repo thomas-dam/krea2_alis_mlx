@@ -15,3 +15,4 @@ release_mixed/
 *.safetensors
 out*.png
 *.out
+outputs/

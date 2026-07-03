@@ -9,79 +9,67 @@ Qwen3-VL-4B encoder / tokenizer are pulled from krea/Krea-2-Turbo on first run.
 Set KREA2_BASE_DIR to a local Krea-2-Turbo snapshot to skip that download.
 """
 
-import gc
 import os
 
 import gradio as gr
 
-from krea2.pipeline import Krea2Pipeline, resolve_weights
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-SIZES = ["512", "768", "1024"]
-# selectable builds (label shown in the UI -> precision)
-MODELS = [("8-bit · best quality (14 GB)", "8bit"), ("mixed-4/8 · smaller (9.8 GB)", "mixed-4-8")]
-_PIPE = None
-_PIPE_PREC = None
+from krea2.service import ASPECT_RATIOS, MODELS, default_precision, generate_and_save
 
 
-def _pipe(precision):
-    """Return a pipeline for the chosen build, (re)loading it if the build changed.
-    Downloads the build from HF on first use if it isn't already local."""
-    global _PIPE, _PIPE_PREC
-    if _PIPE is None or _PIPE_PREC != precision:
-        prec, path = resolve_weights(HERE, precision=precision, download=True)
-        # free the previous build first — two 12.9B transformers won't fit in unified memory.
-        # gc.collect() drops the Python refs; mx.clear_cache() returns MLX's freed Metal buffers
-        # (cached by default) so they don't stack with the incoming build's allocation.
-        _PIPE, _PIPE_PREC = None, None
-        gc.collect()
-        import mlx.core as mx
-        mx.clear_cache()
-        _PIPE = Krea2Pipeline(path, precision=prec, base_dir=os.environ.get("KREA2_BASE_DIR"))
-        _PIPE_PREC = prec
-    return _PIPE
-
-
-def generate(prompt, model, size, steps, seed, num_images, safety_on, progress=gr.Progress()):
+def generate(prompt, model, lora_path, lora_strength, aspect_ratio, steps, seed, num_images, safety_on, progress=gr.Progress()):
     if not prompt or not prompt.strip():
         raise gr.Error("Enter a prompt.")
     try:
-        progress(0, desc="Loading model… (first run downloads weights — a few minutes)")
-        pipe = _pipe(model)
-        s = int(size)
+        progress(0, desc="Preparing selected model…")
 
         def cb(step, total):
             progress(step / total, desc=f"Generating · step {step}/{total}")
 
-        imgs = pipe.generate(prompt.strip(), width=s, height=s, steps=int(steps),
-                             seed=int(seed), num_images=int(num_images), step_callback=cb)
-        if safety_on:
-            progress(1.0, desc="Safety check…")
-            from krea2 import safety
-            imgs, _ = safety.apply(imgs, enabled=True)
-        return imgs
+        result = generate_and_save(
+            prompt=prompt,
+            model=model,
+            lora_path=lora_path,
+            lora_strength=float(lora_strength),
+            aspect_ratio=aspect_ratio,
+            steps=int(steps),
+            seed=int(seed),
+            num_images=int(num_images),
+            safety_on=bool(safety_on),
+            step_callback=cb,
+        )
+        progress(1.0, desc="Saving outputs…")
+        timings = result.timings
+        timing_text = (
+            f"Job: {result.job_id}\n"
+            f"Timing: total {timings['total_seconds']}s · "
+            f"generate {timings['generate_seconds']}s · "
+            f"{timings['seconds_per_image']}s/image"
+        )
+        return result.images, timing_text + "\n\nSaved:\n" + "\n".join(result.saved + [result.metadata_path])
     except gr.Error:
         raise
     except Exception as e:  # surface OOM / download errors as a friendly message, not a traceback
         m = str(e).lower()
         if any(k in m for k in ("memory", "alloc", "metal")):
-            raise gr.Error("Out of memory — 1024² needs ~24 GB+ unified memory. Try Size 512, "
-                           "fewer Images, or the mixed-4/8 build.") from None
+            raise gr.Error("Out of memory — these 1024-base presets need ~24 GB+ unified memory. "
+                           "Try fewer Images or the mixed-4/8 build.") from None
         raise gr.Error(f"Generation failed: {e}") from None
 
 
-with gr.Blocks(title="Krea 2 Turbo · Alis MLX", theme=gr.themes.Soft()) as demo:
-    default_prec, _ = resolve_weights(HERE, download=False)  # the build already in this folder, if any
+with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
+    default_prec = default_precision()  # the build already in this folder, if any
     gr.Markdown("# Krea&nbsp;2&nbsp;Turbo · Alis MLX\n"
                 "Local text-to-image on Apple silicon · 8-step Turbo (no CFG). "
-                "**First run loads the model (~30 s); then ~50 s per 1024² image on an M3 Ultra** "
-                "(slower chips take longer; ×N for N images). Switching **Model** downloads that build on first use.")
+                "**First run loads the model (~30 s); then ~50 s per 1024-base image on an M3 Ultra** "
+                "(slower chips take longer; ×N for N images).")
     with gr.Row():
         with gr.Column(scale=1):
             prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")
             model = gr.Dropdown(MODELS, value=default_prec, label="Model")
+            lora_path = gr.Textbox(label="LoRA path", placeholder="/path/to/krea2_lora.safetensors")
+            lora_strength = gr.Slider(0, 2, value=1, step=0.05, label="LoRA strength")
             with gr.Row():
-                size = gr.Dropdown(SIZES, value="1024", label="Size")
+                aspect_ratio = gr.Dropdown(ASPECT_RATIOS, value="1:1", label="Aspect ratio")
                 steps = gr.Slider(4, 12, value=8, step=1, label="Steps")
             with gr.Row():
                 seed = gr.Number(value=0, label="Seed", precision=0)
@@ -96,9 +84,14 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX", theme=gr.themes.Soft()) as demo
             )
         with gr.Column(scale=1):
             gallery = gr.Gallery(label="Output", columns=2, height=560, object_fit="contain")
-    btn.click(generate, [prompt, model, size, steps, seed, num_images, safety_chk], gallery)
+            saved_paths = gr.Textbox(label="Saved files", lines=5, interactive=False)
+    btn.click(
+        generate,
+        [prompt, model, lora_path, lora_strength, aspect_ratio, steps, seed, num_images, safety_chk],
+        [gallery, saved_paths],
+    )
 
 
 if __name__ == "__main__":
     # bind to loopback by default (don't expose the generator on the LAN); override with KREA2_HOST
-    demo.queue().launch(server_name=os.environ.get("KREA2_HOST", "127.0.0.1"))
+    demo.queue().launch(server_name=os.environ.get("KREA2_HOST", "127.0.0.1"), theme=gr.themes.Soft())

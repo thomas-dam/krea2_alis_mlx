@@ -14,6 +14,7 @@ from mlx import nn
 from mlx.utils import tree_map
 
 from .quant_recipes import mixed_4_8, quantize_bulk
+from .lora import apply_lora, set_lora_scale
 from .sampling import sample, to_pil
 from .text_encoder import Qwen3VLConditioner
 from .transformer import Krea2Config, SingleStreamDiT
@@ -153,7 +154,14 @@ class Krea2Pipeline:
     - 'mixed-4-8' : transformer_mixed_4_8.safetensors (down_proj+endpoints @8, rest @4)
     - 'bf16'      : krea/Krea-2-Turbo/turbo.safetensors (auto-downloaded)"""
 
-    def __init__(self, transformer_path: str | None = None, precision: str = "8bit", base_dir: str | None = None):
+    def __init__(
+        self,
+        transformer_path: str | None = None,
+        precision: str = "8bit",
+        base_dir: str | None = None,
+        lora_path: str | None = None,
+        lora_scale: float = 1.0,
+    ):
         base = base_dir or _base_dir()
         m = SingleStreamDiT(Krea2Config())
         if precision == "8bit":
@@ -170,10 +178,14 @@ class Krea2Pipeline:
             m.update(tree_map(lambda a: a.astype(mx.bfloat16), m.parameters()))
         else:
             raise ValueError(f"precision must be '8bit', 'mixed-4-8' or 'bf16', got {precision}")
+        self.lora_report = apply_lora(m, lora_path, scale=lora_scale) if lora_path else None
         mx.eval(m.parameters())
         self.transformer = m
         self.vae = _load_vae(base)
         self.encoder = Qwen3VLConditioner(base, dtype=mx.bfloat16)
+
+    def set_lora_scale(self, scale: float) -> int:
+        return set_lora_scale(self.transformer, scale)
 
     def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1,
                  init_image=None, strength=0.6, step_callback=None):
