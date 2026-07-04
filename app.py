@@ -10,10 +10,19 @@ Set KREA2_BASE_DIR to a local Krea-2-Turbo snapshot to skip that download.
 """
 
 import os
+from pathlib import Path
 
 import gradio as gr
 
 from krea2.service import ASPECT_RATIOS, MODELS, default_precision, generate_and_save
+
+LORAS_DIR = Path(__file__).resolve().parent / "loras"
+
+
+def lora_choices():
+    LORAS_DIR.mkdir(exist_ok=True)
+    files = sorted(LORAS_DIR.glob("*.safetensors"), key=lambda p: p.name.lower())
+    return [("None", "")] + [(p.stem, str(p)) for p in files]
 
 
 def generate(
@@ -80,7 +89,7 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
         with gr.Column(scale=1):
             prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")
             model = gr.Dropdown(MODELS, value=default_prec, label="Model")
-            lora_path = gr.Textbox(label="LoRA path", placeholder="/path/to/krea2_lora.safetensors")
+            lora_path = gr.Dropdown(lora_choices(), value="", label="LoRA")
             reference_image = gr.Image(label="Reference image", type="pil")
             reference_strength = gr.Slider(0.05, 1.0, value=0.6, step=0.05, label="Reference change")
             with gr.Row():
