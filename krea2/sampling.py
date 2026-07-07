@@ -69,6 +69,9 @@ def sample(
     init_noise=None,   # (n,16,H/8,W/8) to match a PT run; else MLX RNG
     init_latent=None,  # img2img: clean VAE latents ((n or 1),16,H/8,W/8); enter the schedule at sigma≈strength
     strength=1.0,      # img2img: 1.0 = ignore init_latent (pure txt2img), →0 = barely change the input
+    control_latent=None,  # depth control: clean VAE latents ((n or 1),16,H/8,W/8)
+    control_tokens=None,  # depth control: pre-patchified tokens ((n or 1),L,channels*patch^2)
+    control_strength=1.0,
     dtype=mx.bfloat16,
     step_callback=None,  # called as step_callback(step, total) after each denoising step
 ):
@@ -96,34 +99,51 @@ def sample(
     ts = timesteps(h_ * w_, steps, x1, x2, y1=y1, y2=y2, mu=mu)
 
     # img2img: the model integrates the straight (rectified-flow) path x_t = t*noise + (1-t)*x0 from
-    # t=1 down to 0. Instead of starting at t=1, enter the path at the first scheduled sigma <=
-    # strength (always leaving >= 1 step), blending the clean latents with this run's start noise.
+    # t=1 down to 0. Start at the requested strength, then continue to the next lower scheduled
+    # sigma. Clamp below the final nonzero sigma; a lone low-sigma -> 0 step is unstable.
     if init_latent is not None and not 0.0 < strength <= 1.0:   # pipeline validates; guard direct callers too
         raise ValueError(f"strength must be in (0, 1], got {strength}.")
     start = 0
     if init_latent is not None and strength < 1.0:
+        if len(ts) < 3:
+            raise ValueError("img2img needs steps >= 2 — a 1-step schedule has no timestep at or below strength.")
+        strength = max(strength, ts[-2])
         z0 = mx.array(init_latent).astype(dtype)
         if z0.shape[0] == 1 and n > 1:
             z0 = mx.broadcast_to(z0, noise.shape)
         if z0.shape != noise.shape:
             raise ValueError(f"init_latent shape {z0.shape} does not match latents {noise.shape}.")
-        # strengths below the smallest scheduled sigma round UP to it (the len-2 default) so at
-        # least one step always runs — at 8 steps that floor is ~0.2-0.3 depending on resolution.
-        start = next((i for i, t in enumerate(ts[:-1]) if t <= strength), len(ts) - 2)
-        sigma = ts[start]
-        if sigma >= 1.0:  # only possible at steps=1: the schedule has no entry point below t=1
-            raise ValueError("img2img needs steps >= 2 — a 1-step schedule has no timestep at or below strength.")
-        noise = sigma * noise + (1.0 - sigma) * z0
+        lower = next((i for i, t in enumerate(ts[1:], start=1) if t < strength), len(ts) - 1)
+        noise = strength * noise + (1.0 - strength) * z0
 
     img = patchify(noise, patch)  # (n, h_*w_, 64)
     pos = build_positions(n, txtlen, h_, w_)
     full_mask = mx.concatenate([mask, mx.ones((n, h_ * w_))], axis=1)
 
-    pairs = list(zip(ts[:-1], ts[1:]))[start:]
+    if init_latent is not None and strength < 1.0:
+        pairs = [(strength, ts[lower])] + list(zip(ts[lower:-1], ts[lower + 1:]))
+    else:
+        pairs = list(zip(ts[:-1], ts[1:]))[start:]
+    if control_latent is not None and control_tokens is not None:
+        raise ValueError("Pass either control_latent or control_tokens, not both.")
+    if control_latent is not None:
+        zc = mx.array(control_latent).astype(dtype)
+        if zc.shape[0] == 1 and n > 1:
+            zc = mx.broadcast_to(zc, noise.shape)
+        if zc.shape != noise.shape:
+            raise ValueError(f"control_latent shape {zc.shape} does not match latents {noise.shape}.")
+        control_tokens = patchify(zc, patch)
+    elif control_tokens is not None:
+        control_tokens = mx.array(control_tokens).astype(dtype)
+        expected = (n, h_ * w_, vae.latent_channels * patch * patch)
+        if control_tokens.shape[0] == 1 and n > 1:
+            control_tokens = mx.broadcast_to(control_tokens, expected)
+        if tuple(control_tokens.shape) != expected:
+            raise ValueError(f"control_tokens shape {control_tokens.shape} does not match expected {expected}.")
     total = len(pairs)
     for i, (tc, tp) in enumerate(pairs):
         t = mx.full((n,), tc, dtype=dtype)
-        v = transformer(img, ctx, t, pos, full_mask)
+        v = transformer(img, ctx, t, pos, full_mask, control_img=control_tokens, control_strength=control_strength)
         if cfg:
             raise NotImplementedError("CFG path not needed for turbo")
         img = img + (tp - tc) * v

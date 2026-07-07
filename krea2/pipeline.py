@@ -14,7 +14,7 @@ from mlx import nn
 from mlx.utils import tree_map
 
 from .quant_recipes import mixed_4_8, quantize_bulk
-from .lora import apply_lora, fuse_lora, set_lora_scale
+from .lora import apply_depth_lora, apply_lora, fuse_lora, set_lora_scale
 from .sampling import sample, to_pil
 from .text_encoder import Qwen3VLConditioner
 from .transformer import Krea2Config, SingleStreamDiT
@@ -161,6 +161,9 @@ class Krea2Pipeline:
         base_dir: str | None = None,
         lora_path: str | None = None,
         lora_scale: float = 1.0,
+        lora_paths: list[str] | tuple[str, ...] | None = None,
+        lora_scales: list[float] | tuple[float, ...] | None = None,
+        depth_lora_path: str | None = None,
         fuse_lora_adapters: bool = True,
         requantize_lora: bool = True,
     ):
@@ -180,8 +183,29 @@ class Krea2Pipeline:
             m.update(tree_map(lambda a: a.astype(mx.bfloat16), m.parameters()))
         else:
             raise ValueError(f"precision must be '8bit', 'mixed-4-8' or 'bf16', got {precision}")
-        self.lora_report = apply_lora(m, lora_path, scale=lora_scale) if lora_path else None
-        self.fused_lora_count = fuse_lora(m, requantize=requantize_lora) if self.lora_report and fuse_lora_adapters else 0
+        if lora_paths is None:
+            lora_paths = [lora_path] if lora_path else []
+            lora_scales = [lora_scale] if lora_path else []
+        elif lora_scales is None:
+            lora_scales = [lora_scale] * len(lora_paths)
+        if len(lora_paths) != len(lora_scales):
+            raise ValueError("lora_paths and lora_scales must have the same length.")
+
+        self.lora_reports = []
+        self.depth_lora_report = None
+        self.fused_lora_count = 0
+        if depth_lora_path:
+            self.depth_lora_report = apply_depth_lora(m, depth_lora_path, scale=1.0)
+            if fuse_lora_adapters:
+                self.fused_lora_count += fuse_lora(m, requantize=requantize_lora)
+        for path, scale in zip(lora_paths, lora_scales):
+            if not path:
+                continue
+            report = apply_lora(m, path, scale=float(scale))
+            self.lora_reports.append(report)
+            if fuse_lora_adapters:
+                self.fused_lora_count += fuse_lora(m, requantize=requantize_lora)
+        self.lora_report = self.lora_reports[0] if self.lora_reports else None
         mx.eval(m.parameters())
         self.transformer = m
         self.vae = _load_vae(base)
@@ -190,8 +214,29 @@ class Krea2Pipeline:
     def set_lora_scale(self, scale: float) -> int:
         return set_lora_scale(self.transformer, scale)
 
+    def _encode_control_image(self, image, *, width: int, height: int):
+        from PIL import Image, ImageOps
+        from mflux.models.common.vae.vae_util import VAEUtil
+        from mflux.utils.image_util import ImageUtil
+
+        if isinstance(image, Image.Image):
+            pil = image.convert("RGB")
+        else:
+            pil = Image.open(image).convert("RGB")
+        pil = ImageOps.fit(pil, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        image_array = ImageUtil.to_array(pil)
+        tiling = None
+        if width * height >= 1536 * 1536:
+            from mflux.models.common.vae.tiling_config import TilingConfig
+            tiling = TilingConfig()
+        latent = VAEUtil.encode(vae=self.vae, image=image_array, tiling_config=tiling)
+        if latent.ndim == 5:
+            latent = latent[:, :, 0]
+        mx.eval(latent)
+        return latent
+
     def generate(self, prompt, *, width=1024, height=1024, steps=8, seed=0, num_images=1,
-                 init_image=None, strength=0.6, step_callback=None):
+                 init_image=None, strength=0.6, depth_image=None, depth_strength=1.0, step_callback=None):
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string.")
         try:  # uniform ValueError for None / non-numeric / inf / nan (not TypeError / OverflowError)
@@ -209,6 +254,17 @@ class Krea2Pipeline:
             raise ValueError(f"num_images must be in [1, 8], got {num_images}.")
         if not 0 <= seed < 2**64:  # mx.random.seed wants a non-negative uint64 (else a bare TypeError)
             raise ValueError(f"seed must be in [0, 2^64), got {seed}.")
+        control_latent = None
+        if depth_image is not None:
+            try:
+                depth_strength = float(depth_strength)
+            except (TypeError, ValueError):
+                raise ValueError("depth_strength must be a number.") from None
+            if not 0.0 <= depth_strength <= 10.0:
+                raise ValueError(f"depth_strength must be in [0, 10], got {depth_strength}.")
+            if not getattr(self.transformer.first, "supports_depth_control", False):
+                raise ValueError("Depth image supplied but no depth-control LoRA adapter is loaded.")
+            control_latent = self._encode_control_image(depth_image, width=width, height=height)
         init_latent = None
         if init_image is not None:
             try:
@@ -235,5 +291,6 @@ class Krea2Pipeline:
         dec = sample(self.transformer, self.vae, self.encoder, [prompt] * num_images,
                      width=width, height=height, steps=steps, guidance=0.0, seed=seed,
                      init_latent=init_latent, strength=strength if init_latent is not None else 1.0,
+                     control_latent=control_latent, control_strength=depth_strength,
                      step_callback=step_callback)
         return to_pil(dec)

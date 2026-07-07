@@ -24,6 +24,11 @@ class GenerateRequest(BaseModel):
     model: str = "8bit"
     lora_path: str | None = None
     lora_strength: float = 1.0
+    lora_path_2: str | None = None
+    lora_strength_2: float = 1.0
+    depth_image_path: str | None = None
+    depth_lora_path: str | None = None
+    depth_strength: float = Field(1.0, ge=0.0, le=10.0)
     aspect_ratio: str = "1:1"
     steps: int = Field(8, ge=1, le=50)
     seed: int = Field(0, ge=0)
@@ -63,6 +68,11 @@ def generate(req: GenerateRequest):
             model=req.model,
             lora_path=req.lora_path,
             lora_strength=req.lora_strength,
+            lora_path_2=req.lora_path_2,
+            lora_strength_2=req.lora_strength_2,
+            depth_image_path=req.depth_image_path,
+            depth_lora_path=req.depth_lora_path,
+            depth_strength=req.depth_strength,
             aspect_ratio=req.aspect_ratio,
             steps=req.steps,
             seed=req.seed,

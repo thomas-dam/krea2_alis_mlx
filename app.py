@@ -19,6 +19,22 @@ from krea2.service import ASPECT_RATIOS, MODELS, default_precision, generate_and
 LORAS_DIR = Path(__file__).resolve().parent / "loras"
 
 
+KEYBOARD_SHORTCUT_JS = """
+function() {
+  document.addEventListener("keydown", function(event) {
+    if (event.repeat || event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+      return;
+    }
+    const button = document.querySelector("#generate-button button") || document.querySelector("#generate-button");
+    if (button && !button.disabled) {
+      event.preventDefault();
+      button.click();
+    }
+  });
+}
+"""
+
+
 def lora_choices():
     LORAS_DIR.mkdir(exist_ok=True)
     files = sorted(LORAS_DIR.glob("*.safetensors"), key=lambda p: p.name.lower())
@@ -29,8 +45,14 @@ def generate(
     prompt,
     model,
     lora_path,
+    lora_strength,
+    lora_path_2,
+    lora_strength_2,
     reference_image,
     reference_strength,
+    depth_image,
+    depth_lora_path,
+    depth_strength,
     aspect_ratio,
     steps,
     seed,
@@ -42,6 +64,15 @@ def generate(
         raise gr.Error("Enter a prompt.")
     try:
         progress(0, desc="Preparing selected model…")
+        reference_strength = float(reference_strength)
+        if reference_image is not None and reference_strength > 0:
+            init_image = reference_image
+            # The sampler uses img2img "change strength": lower values preserve the input,
+            # higher values re-imagine it. The UI exposes the inverse: reference strength.
+            init_strength = max(1.0 - reference_strength, 1e-6)
+        else:
+            init_image = None
+            init_strength = 1.0
 
         def cb(step, total):
             progress(step / total, desc=f"Generating · step {step}/{total}")
@@ -50,9 +81,14 @@ def generate(
             prompt=prompt,
             model=model,
             lora_path=lora_path,
-            lora_strength=1.0,
-            init_image=reference_image,
-            init_strength=float(reference_strength),
+            lora_strength=float(lora_strength),
+            lora_path_2=lora_path_2,
+            lora_strength_2=float(lora_strength_2),
+            init_image=init_image,
+            init_strength=init_strength,
+            depth_image=depth_image,
+            depth_lora_path=depth_lora_path,
+            depth_strength=float(depth_strength),
             aspect_ratio=aspect_ratio,
             steps=int(steps),
             seed=int(seed),
@@ -79,7 +115,7 @@ def generate(
         raise gr.Error(f"Generation failed: {e}") from None
 
 
-with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
+with gr.Blocks(title="Krea 2 Turbo · Alis MLX", js=KEYBOARD_SHORTCUT_JS) as demo:
     default_prec = default_precision()  # the build already in this folder, if any
     gr.Markdown("# Krea&nbsp;2&nbsp;Turbo · Alis MLX\n"
                 "Local text-to-image on Apple silicon · 8-step Turbo (no CFG). "
@@ -89,9 +125,15 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
         with gr.Column(scale=1):
             prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")
             model = gr.Dropdown(MODELS, value=default_prec, label="Model")
-            lora_path = gr.Dropdown(lora_choices(), value="", label="LoRA")
+            lora_path = gr.Dropdown(lora_choices(), value="", label="LoRA 1")
+            lora_strength = gr.Slider(-10.0, 10.0, value=1.0, step=0.05, label="LoRA 1 strength")
+            lora_path_2 = gr.Dropdown(lora_choices(), value="", label="LoRA 2")
+            lora_strength_2 = gr.Slider(-10.0, 10.0, value=1.0, step=0.05, label="LoRA 2 strength")
             reference_image = gr.Image(label="Reference image", type="pil")
-            reference_strength = gr.Slider(0.05, 1.0, value=0.6, step=0.05, label="Reference change")
+            reference_strength = gr.Slider(0.0, 1.0, value=0.4, step=0.05, label="Reference strength")
+            depth_image = gr.Image(label="Depth map", type="pil")
+            depth_lora_path = gr.Dropdown(lora_choices(), value="", label="Depth control LoRA")
+            depth_strength = gr.Slider(0.0, 10.0, value=1.0, step=0.05, label="Depth strength")
             with gr.Row():
                 aspect_ratio = gr.Dropdown(ASPECT_RATIOS, value="1:1", label="Aspect ratio")
                 steps = gr.Slider(4, 12, value=8, step=1, label="Steps")
@@ -99,7 +141,7 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
                 seed = gr.Number(value=0, label="Seed", precision=0)
                 num_images = gr.Slider(1, 4, value=1, step=1, label="Images")
             safety_chk = gr.Checkbox(value=True, label="NSFW safety filter (recommended; required by the license for public deployments)")
-            btn = gr.Button("Generate", variant="primary")
+            btn = gr.Button("Generate", variant="primary", elem_id="generate-button")
             gr.Examples(
                 [["a fox in the snow"],
                  ["a neon city street at night in the rain, reflections"],
@@ -115,8 +157,14 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             prompt,
             model,
             lora_path,
+            lora_strength,
+            lora_path_2,
+            lora_strength_2,
             reference_image,
             reference_strength,
+            depth_image,
+            depth_lora_path,
+            depth_strength,
             aspect_ratio,
             steps,
             seed,

@@ -24,6 +24,8 @@ REJECT = [   # (prompt, kwargs) that must raise ValueError
     ("ok", {"num_images": 9}),      # too many
     ("ok", {"seed": -1}),           # negative seed (mx.random.seed wants non-negative)
     ("ok", {"width": None}),        # non-numeric → uniform ValueError, not TypeError
+    ("ok", {"depth_image": object(), "depth_strength": "bad"}),  # depth strength must validate before model access
+    ("ok", {"depth_image": object(), "depth_strength": 11}),     # depth strength upper bound
 ]
 
 

@@ -11,8 +11,6 @@ to run the full-precision transformer from krea/Krea-2-Turbo instead.
 import argparse
 import os
 
-from krea2.pipeline import Krea2Pipeline, resolve_weights
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -30,6 +28,16 @@ def main():
                     help="img2img: path to an input image to transform (scaled to --width/--height)")
     ap.add_argument("--strength", type=float, default=0.6,
                     help="img2img: how much to change the input, (0, 1] — higher = more change (default 0.6)")
+    ap.add_argument("--lora", default=None,
+                    help="path to a regular LoRA adapter")
+    ap.add_argument("--lora-strength", type=float, default=1.0,
+                    help="regular LoRA strength multiplier (default 1.0)")
+    ap.add_argument("--depth-image", default=None,
+                    help="depth control: path to a user-provided depth map")
+    ap.add_argument("--depth-lora", default=None,
+                    help="depth control: path to the depth-control LoRA (default: loras/depth-control-lora.safetensors)")
+    ap.add_argument("--depth-strength", type=float, default=1.0,
+                    help="depth control: runtime control strength in [0, 10] (default 1.0)")
     ap.add_argument("--out", default="out.png")
     ap.add_argument("--no-safety", action="store_true",
                     help="disable the NSFW content filter (on by default; see the license)")
@@ -42,6 +50,23 @@ def main():
                 im.verify()
         except (OSError, UnidentifiedImageError, ValueError) as e:
             ap.error(f"--init-image: cannot read {args.init_image!r}: {e}")
+    if args.depth_image:
+        from PIL import Image, UnidentifiedImageError
+        try:
+            with Image.open(args.depth_image) as im:
+                im.verify()
+        except (OSError, UnidentifiedImageError, ValueError) as e:
+            ap.error(f"--depth-image: cannot read {args.depth_image!r}: {e}")
+    if args.lora and not os.path.exists(args.lora):
+        ap.error(f"--lora: file not found: {args.lora}")
+    if args.depth_lora and not args.depth_image:
+        ap.error("--depth-lora requires --depth-image")
+    if args.depth_image and args.depth_lora is None:
+        args.depth_lora = os.path.join(os.path.dirname(os.path.abspath(__file__)), "loras", "depth-control-lora.safetensors")
+    if args.depth_lora and not os.path.exists(args.depth_lora):
+        ap.error(f"--depth-lora: file not found: {args.depth_lora}")
+
+    from krea2.pipeline import Krea2Pipeline, resolve_weights
 
     here = os.path.dirname(os.path.abspath(__file__))
     precision, tpath = args.precision, args.transformer
@@ -49,11 +74,18 @@ def main():
         # local file if present, else download the chosen build (8bit / mixed-4-8; default 8bit)
         precision, tpath = resolve_weights(here, precision=precision, download=True)
 
-    pipe = Krea2Pipeline(transformer_path=tpath, precision=precision)
+    pipe = Krea2Pipeline(
+        transformer_path=tpath,
+        precision=precision,
+        lora_path=args.lora,
+        lora_scale=args.lora_strength,
+        depth_lora_path=args.depth_lora,
+    )
     try:
         images = pipe.generate(args.prompt, width=args.width, height=args.height,
                                steps=args.steps, seed=args.seed, num_images=args.num_images,
-                               init_image=args.init_image, strength=args.strength)
+                               init_image=args.init_image, strength=args.strength,
+                               depth_image=args.depth_image, depth_strength=args.depth_strength)
     except ValueError as e:
         ap.error(str(e))  # clean "generate.py: error: ..." instead of a traceback
     from krea2 import safety

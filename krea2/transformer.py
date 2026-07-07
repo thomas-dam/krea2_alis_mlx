@@ -281,8 +281,15 @@ class SingleStreamDiT(nn.Module):
         t: mx.array,  # (B,) current timestep in [0,1]
         pos: mx.array,  # (L, 3) positions for [txt; img]
         mask: mx.array,  # (B, L) validity {0,1}
+        control_img: mx.array | None = None,  # optional depth-control patch tokens, same shape as img
+        control_strength: float = 1.0,
     ) -> mx.array:
-        img = self.first(img)
+        if control_img is None:
+            img = self.first(img)
+        else:
+            if not getattr(self.first, "supports_depth_control", False):
+                raise ValueError("Depth control requires a dedicated depth-control LoRA adapter.")
+            img = self.first(img, control_img, control_strength)
         t_emb = self._run_seq(self.tmlp, _timestep_embed(t, self.cfg.tdim).astype(img.dtype))  # (B,1,feat)
         tvec = self._run_seq(self.tproj, t_emb)  # (B,1,6*feat)
 

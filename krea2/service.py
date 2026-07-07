@@ -22,6 +22,7 @@ from .pipeline import Krea2Pipeline, resolve_weights
 log = logging.getLogger("krea2.service")
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = ROOT / "outputs"
+DEFAULT_DEPTH_LORA = ROOT / "loras" / "depth-control-lora.safetensors"
 ASPECT_RATIOS = [
     ("1:1 · 1024×1024", "1:1"),
     ("4:3 · 1152×864", "4:3"),
@@ -46,8 +47,8 @@ MODELS = [("8-bit · best quality (14 GB)", "8bit"), ("mixed-4/8 · smaller (9.8
 
 _PIPE = None
 _PIPE_PREC = None
-_PIPE_LORA = None
-_PIPE_LORA_SCALE = None
+_PIPE_LORAS = None
+_PIPE_DEPTH_LORA = None
 _PIPE_LOCK = threading.Lock()
 
 
@@ -71,16 +72,44 @@ def normalize_lora_path(lora_path: str | None) -> str | None:
     return os.path.expanduser(lora_path.strip()) if lora_path and lora_path.strip() else None
 
 
-def get_pipeline(precision: str, lora_path: str | None = None, lora_scale: float = 1.0) -> Krea2Pipeline:
-    """Return a cached pipeline for precision + LoRA path + fused LoRA scale."""
-    global _PIPE, _PIPE_PREC, _PIPE_LORA, _PIPE_LORA_SCALE
-    lora_path = normalize_lora_path(lora_path)
-    lora_scale = float(lora_scale) if lora_path else None
-    if lora_path and not os.path.exists(lora_path):
-        raise ValueError(f"LoRA file not found: {lora_path}")
-    if _PIPE is None or _PIPE_PREC != precision or _PIPE_LORA != lora_path or _PIPE_LORA_SCALE != lora_scale:
+def normalize_depth_lora_path(depth_image, depth_lora_path: str | None) -> str | None:
+    path = normalize_lora_path(depth_lora_path)
+    if depth_image is None:
+        if path:
+            raise ValueError("depth_lora_path was provided but no depth image was supplied.")
+        return None
+    if path is None:
+        path = str(DEFAULT_DEPTH_LORA)
+    if not os.path.exists(path):
+        raise ValueError(f"Depth-control LoRA file not found: {path}")
+    return path
+
+
+def normalize_lora_slots(*slots: tuple[str | None, float]) -> tuple[tuple[str, float], ...]:
+    normalized = []
+    for path, strength in slots:
+        path = normalize_lora_path(path)
+        if not path:
+            continue
+        if not os.path.exists(path):
+            raise ValueError(f"LoRA file not found: {path}")
+        normalized.append((path, float(strength)))
+    return tuple(normalized)
+
+
+def get_pipeline(
+    precision: str,
+    lora_path: str | None = None,
+    lora_scale: float = 1.0,
+    loras: tuple[tuple[str, float], ...] | None = None,
+    depth_lora_path: str | None = None,
+) -> Krea2Pipeline:
+    """Return a cached pipeline for precision + ordered fused LoRA slots."""
+    global _PIPE, _PIPE_PREC, _PIPE_LORAS, _PIPE_DEPTH_LORA
+    loras = normalize_lora_slots((lora_path, lora_scale)) if loras is None else tuple(loras)
+    if _PIPE is None or _PIPE_PREC != precision or _PIPE_LORAS != loras or _PIPE_DEPTH_LORA != depth_lora_path:
         prec, path = resolve_weights(str(ROOT), precision=precision, download=True)
-        _PIPE, _PIPE_PREC, _PIPE_LORA, _PIPE_LORA_SCALE = None, None, None, None
+        _PIPE, _PIPE_PREC, _PIPE_LORAS, _PIPE_DEPTH_LORA = None, None, None, None
         gc.collect()
         import mlx.core as mx
 
@@ -89,12 +118,13 @@ def get_pipeline(precision: str, lora_path: str | None = None, lora_scale: float
             path,
             precision=prec,
             base_dir=os.environ.get("KREA2_BASE_DIR"),
-            lora_path=lora_path,
-            lora_scale=lora_scale,
+            lora_paths=[path for path, _ in loras],
+            lora_scales=[scale for _, scale in loras],
+            depth_lora_path=depth_lora_path,
         )
         _PIPE_PREC = prec
-        _PIPE_LORA = lora_path
-        _PIPE_LORA_SCALE = lora_scale
+        _PIPE_LORAS = loras
+        _PIPE_DEPTH_LORA = depth_lora_path
     return _PIPE
 
 
@@ -105,8 +135,13 @@ def save_outputs(
     model: str,
     lora_path: str | None,
     lora_strength: float,
+    loras: tuple[tuple[str, float], ...] | None,
     init_image_used: bool,
     init_strength: float,
+    depth_image_used: bool,
+    depth_image_path: str | None,
+    depth_lora_path: str | None,
+    depth_strength: float,
     aspect_ratio: str,
     width: int,
     height: int,
@@ -123,8 +158,13 @@ def save_outputs(
         "model": model,
         "lora_path": lora_path or None,
         "lora_strength": float(lora_strength),
+        "loras": [{"path": path, "strength": strength} for path, strength in (loras or ())],
         "init_image_used": bool(init_image_used),
         "init_strength": float(init_strength),
+        "depth_control_used": bool(depth_image_used),
+        "depth_image_path": depth_image_path or None,
+        "depth_lora_path": depth_lora_path or None,
+        "depth_strength": float(depth_strength),
         "aspect_ratio": aspect_ratio,
         "width": width,
         "height": height,
@@ -157,8 +197,14 @@ def generate_and_save(
     model: str = "8bit",
     lora_path: str | None = None,
     lora_strength: float = 1.0,
+    lora_path_2: str | None = None,
+    lora_strength_2: float = 1.0,
     init_image=None,
     init_strength: float = 0.6,
+    depth_image=None,
+    depth_image_path: str | None = None,
+    depth_lora_path: str | None = None,
+    depth_strength: float = 1.0,
     aspect_ratio: str = "1:1",
     steps: int = 8,
     seed: int = 0,
@@ -173,15 +219,22 @@ def generate_and_save(
     if aspect_ratio not in ASPECT_DIMS:
         raise ValueError(f"Unknown aspect ratio: {aspect_ratio}")
 
-    lora_path = normalize_lora_path(lora_path)
+    loras = normalize_lora_slots((lora_path, lora_strength), (lora_path_2, lora_strength_2))
+    depth_image = depth_image if depth_image is not None else normalize_lora_path(depth_image_path)
+    if isinstance(depth_image, str) and not os.path.exists(depth_image):
+        raise ValueError(f"Depth image file not found: {depth_image}")
+    depth_lora_path = normalize_depth_lora_path(depth_image, depth_lora_path)
+    lora_path = loras[0][0] if loras else None
+    lora_strength = loras[0][1] if loras else float(lora_strength)
     width, height = ASPECT_DIMS[aspect_ratio]
     run_started = time.perf_counter()
     log.info(
-        "job %s queued model=%s lora=%s init=%s ratio=%s size=%sx%s steps=%s seed=%s images=%s safety=%s",
+        "job %s queued model=%s loras=%s init=%s depth=%s ratio=%s size=%sx%s steps=%s seed=%s images=%s safety=%s",
         job_id,
         model,
-        lora_path or "none",
+        ", ".join(f"{Path(path).name}@{strength:g}" for path, strength in loras) or "none",
         init_image is not None,
+        depth_image is not None,
         aspect_ratio,
         width,
         height,
@@ -192,7 +245,7 @@ def generate_and_save(
     )
     with _PIPE_LOCK:
         log.info("job %s started", job_id)
-        pipe = get_pipeline(model, lora_path, float(lora_strength))
+        pipe = get_pipeline(model, loras=loras, depth_lora_path=depth_lora_path)
         prepared_at = time.perf_counter()
 
         def on_step(step: int, total: int):
@@ -209,6 +262,8 @@ def generate_and_save(
             num_images=int(num_images),
             init_image=init_image,
             strength=float(init_strength),
+            depth_image=depth_image,
+            depth_strength=float(depth_strength),
             step_callback=on_step,
         )
         generated_at = time.perf_counter()
@@ -234,8 +289,13 @@ def generate_and_save(
             model=model,
             lora_path=lora_path,
             lora_strength=lora_strength,
+            loras=loras,
             init_image_used=init_image is not None,
             init_strength=init_strength,
+            depth_image_used=depth_image is not None,
+            depth_image_path=depth_image if isinstance(depth_image, str) else depth_image_path,
+            depth_lora_path=depth_lora_path,
+            depth_strength=depth_strength,
             aspect_ratio=aspect_ratio,
             width=width,
             height=height,
