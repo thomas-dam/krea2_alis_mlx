@@ -55,6 +55,22 @@ CSS = """
 #genbar-status input, #genbar-status textarea {
   font-family: var(--font-mono); font-size: 11px; color: var(--body-text-color-subdued);
 }
+/* compact progress readout while generating: one line of text, thin bar, small timer */
+#genbar-status .wrap {background: transparent; padding: 0; inset: 0;}
+#genbar-status .eta-bar {display: none;}
+#genbar-status .progress-level {width: 100%;}
+#genbar-status .progress-level-inner {
+  margin: 0; max-width: 100%; font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#genbar-status .progress-bar-wrap {width: 100%; height: 5px; border-radius: 999px; overflow: hidden;}
+#genbar-status .progress-text {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; font-family: var(--font-mono); z-index: 3;
+  background: var(--background-fill-primary); padding: 0 4px; border-radius: 4px;
+}
+/* hide the stale status text while the live progress overlay is on top of it */
+#genbar-status:has(.wrap:not(.hide)) textarea {opacity: 0;}
 #seed-random {align-self: stretch; height: auto;}
 #app-header {display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 4px 0 0;}
 #app-header h1 {font-size: 20px; margin: 0;}
@@ -230,8 +246,8 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
     with gr.Row(elem_id="genbar"):
         num_images = gr.Slider(1, 4, value=1, step=1, label="Images", scale=1, container=True)
         status = gr.Textbox(value="ready", show_label=False, interactive=False, lines=1,
-                            container=False, elem_id="genbar-status", scale=1)
-        btn = gr.Button("⚡ Generate", variant="primary", elem_id="generate-button", scale=2)
+                            container=False, elem_id="genbar-status", scale=2)
+        btn = gr.Button("⚡ Generate", variant="primary", elem_id="generate-button", scale=1)
 
     # keep accordion badges in sync with their controls
     for src in (lora_path, lora_strength):
