@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Krea 2 Turbo · Alis MLX — UI Mockup v2</title>
+<style>
+  :root{
+    --accent:#6366f1; --accent-soft:#eef0fe; --accent-border:#c7cbfa;
+    --bg:#f7f7fb; --card:#ffffff; --border:#e5e7eb; --text:#1f2937;
+    --muted:#6b7280; --radius:12px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Poppins","Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--text); font-size:14px;}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; gap:14px;
+    padding:14px 24px; background:var(--card); border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:10;
+  }
+  header h1{font-size:18px; font-weight:700;}
+  header h1 span{color:var(--muted); font-weight:400;}
+  .chip{font-size:11px; padding:3px 10px; border-radius:999px; background:#e7f7ee; color:#15803d; font-weight:600;}
+  .chip.dot::before{content:"●"; margin-right:5px; font-size:9px;}
+  header .right{margin-left:auto; color:var(--muted); font-size:12px;}
+
+  /* ---------- layout ---------- */
+  .wrap{max-width:860px; margin:0 auto; padding:20px 24px 120px;}
+
+  /* ---------- tabs ---------- */
+  .tabbar{display:flex; gap:6px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:6px; margin-bottom:14px; position:sticky; top:64px; z-index:9;}
+  .tabbar button{
+    flex:1; border:none; background:transparent; padding:10px 8px; border-radius:8px;
+    font:inherit; font-weight:600; color:var(--muted); cursor:pointer; transition:.15s;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .tabbar button:hover{background:var(--accent-soft);}
+  .tabbar button.active{background:var(--accent); color:#fff;}
+  .tabbar .count{font-size:10px; background:rgba(255,255,255,.25); border-radius:999px; padding:1px 7px;}
+  .tabbar button:not(.active) .count{background:var(--accent-soft); color:var(--accent);}
+
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:14px;}
+  .card h3{font-size:13px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px;}
+  .card h3 .tag{font-size:10px; font-weight:600; color:var(--accent); background:var(--accent-soft); padding:2px 8px; border-radius:999px;}
+
+  label.small{display:block; font-size:11px; font-weight:600; color:var(--muted); margin:12px 0 5px; text-transform:uppercase; letter-spacing:.4px;}
+  label.small:first-of-type{margin-top:0;}
+
+  textarea, select, input[type=text], input[type=number]{
+    width:100%; border:1px solid var(--border); border-radius:8px; padding:10px 12px;
+    font:inherit; color:var(--text); background:#fff; outline:none;
+  }
+  textarea:focus, select:focus, input:focus{border-color:var(--accent);}
+  textarea{min-height:150px; resize:vertical; line-height:1.55;}
+  .hint{font-size:11px; color:var(--muted); margin-top:6px;}
+
+  .sliderrow{display:flex; align-items:center; gap:12px;}
+  .sliderrow input[type=range]{flex:1; accent-color:var(--accent);}
+  .sliderrow .val{min-width:38px; text-align:right; font-weight:600; font-size:13px;}
+
+  .drop{
+    border:1.5px dashed var(--accent-border); border-radius:10px; padding:18px;
+    text-align:center; color:var(--muted); font-size:12px; cursor:pointer; background:#fbfbfe;
+  }
+  .drop:hover{background:var(--accent-soft);}
+  .drop b{color:var(--accent);}
+
+  details.section{border:1px solid var(--border); border-radius:10px; margin-bottom:10px; background:#fff;}
+  details.section summary{
+    cursor:pointer; padding:12px 14px; font-weight:600; font-size:13px; list-style:none;
+    display:flex; align-items:center; gap:8px;
+  }
+  details.section summary::after{content:"▸"; margin-left:auto; color:var(--muted); transition:.15s;}
+  details.section[open] summary::after{transform:rotate(90deg);}
+  details.section .inner{padding:2px 14px 14px;}
+  .badge-off{margin-left:auto; margin-right:8px; font-size:10px; color:var(--muted); background:var(--bg); padding:2px 8px; border-radius:999px;}
+  .badge-on{margin-left:auto; margin-right:8px; font-size:10px; color:#15803d; background:#e7f7ee; padding:2px 8px; border-radius:999px; font-weight:600;}
+
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+
+  .toggle{display:flex; align-items:center; gap:10px; padding:6px 0;}
+  .toggle .sw{width:36px; height:20px; border-radius:999px; background:#d1d5db; position:relative; cursor:pointer; transition:.15s; flex:none;}
+  .toggle .sw::after{content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s;}
+  .toggle .sw.on{background:var(--accent);}
+  .toggle .sw.on::after{left:18px;}
+
+  .smallbtn{border:none; border-radius:8px; background:var(--accent-soft); color:var(--accent); font:inherit; font-weight:600; padding:10px; cursor:pointer;}
+  .smallbtn:hover{filter:brightness(.96);}
+
+  /* ---------- gallery tab ---------- */
+  .preview{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    aspect-ratio:16/10; display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden; margin-bottom:14px;
+  }
+  .preview .placeholder{color:var(--muted); font-size:13px; text-align:center; line-height:1.8;}
+  .preview .placeholder .big{font-size:34px;}
+
+  .thumbs{display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:10px;}
+  .thumbs .t{
+    aspect-ratio:3/4; border-radius:8px; cursor:pointer;
+    border:2px solid transparent; background-size:cover; background-position:center;
+  }
+  .thumbs .t:hover, .thumbs .t.sel{border-color:var(--accent);}
+  .thumbs .empty{color:var(--muted); font-size:12px; padding:24px 8px; grid-column:1/-1; text-align:center;}
+
+  /* ---------- sticky generate bar ---------- */
+  .genbar{
+    position:fixed; bottom:0; left:0; right:0; z-index:20;
+    background:var(--card); border-top:1px solid var(--border);
+    box-shadow:0 -4px 20px rgba(0,0,0,.06);
+  }
+  .genbar .inner{
+    max-width:860px; margin:0 auto; padding:12px 24px;
+    display:grid; grid-template-columns:170px 110px 1fr; gap:10px; align-items:center;
+  }
+  .stepper{display:flex; align-items:center; border:1px solid var(--border); border-radius:8px; background:#fff; overflow:hidden; height:42px;}
+  .stepper button{border:none; background:none; width:32px; height:100%; font-size:16px; cursor:pointer; color:var(--accent); font-weight:700;}
+  .stepper span{flex:1; text-align:center; font-weight:600; font-size:13px;}
+
+  .genbtn{
+    height:42px; border:none; border-radius:10px; background:var(--accent);
+    color:#fff; font:inherit; font-size:15px; font-weight:700; cursor:pointer;
+    box-shadow:0 4px 14px rgba(99,102,241,.35); transition:.15s; position:relative; overflow:hidden;
+  }
+  .genbtn:hover{filter:brightness(1.07);}
+  .genbtn:disabled{cursor:wait;}
+  .genbtn .fill{position:absolute; inset:0; width:0%; background:rgba(255,255,255,.25); transition:width .35s;}
+  .genbtn .lbl{position:relative;}
+
+  .tabpane{display:none;} .tabpane.active{display:block;}
+  .note{font-size:11px; color:var(--muted); text-align:center; padding:16px 0;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Krea 2 Turbo <span>· Alis MLX</span></h1>
+  <span class="chip dot">Model loaded · 8-bit</span>
+  <span class="right">M3 Ultra · ~50 s / image</span>
+</header>
+
+<div class="wrap">
+  <div class="tabbar" role="tablist">
+    <button class="active" data-tab="prompt">✏️ Prompt</button>
+    <button data-tab="loras">🎛 LoRAs &amp; Control</button>
+    <button data-tab="gallery">🖼 Gallery <span class="count" id="gcount">0</span></button>
+  </div>
+
+  <!-- ================= Tab 1: Prompt (incl. all settings) ================= -->
+  <div class="tabpane active" id="pane-prompt">
+    <div class="card">
+      <h3>Prompt</h3>
+      <textarea id="prompt" placeholder="Describe the image you want…">Cinematic photo of a lighthouse on a rocky coast at golden hour, dramatic clouds, crashing waves, shallow depth of field, warm lens flare.</textarea>
+      <div class="hint"><span id="charcount">142</span> characters</div>
+    </div>
+
+    <div class="card">
+      <h3>Settings</h3>
+      <div class="row3">
+        <div>
+          <label class="small">Model</label>
+          <select>
+            <option>8-bit · best (14 GB)</option>
+            <option>6-bit · balanced (11 GB)</option>
+            <option>4-bit · fastest (8 GB)</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Aspect ratio</label>
+          <select>
+            <option>9:16 · 768×1360</option>
+            <option>1:1 · 1024×1024</option>
+            <option>16:9 · 1360×768</option>
+            <option>3:4 · 880×1176</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Steps</label>
+          <div class="sliderrow" style="height:42px"><input type="range" min="4" max="12" value="8" oninput="this.parentNode.querySelector('.val').textContent=this.value"><span class="val">8</span></div>
+        </div>
+      </div>
+      <div class="row2" style="margin-top:12px">
+        <div>
+          <label class="small">Seed</label>
+          <div class="row2">
+            <input type="number" value="0">
+            <button class="smallbtn" onclick="this.parentNode.querySelector('input').value=Math.floor(Math.random()*1e9)">🎲 Random</button>
+          </div>
+        </div>
+        <div>
+          <label class="small">Safety</label>
+          <div class="toggle">
+            <div class="sw" onclick="this.classList.toggle('on')"></div>
+            <div style="font-size:13px">NSFW safety filter<div class="hint" style="margin:0">Required for public deployments</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Tab 2: LoRAs & Control ================= -->
+  <div class="tabpane" id="pane-loras">
+    <div class="card">
+      <h3>LoRAs <span class="tag">1 active</span></h3>
+
+      <details class="section" open>
+        <summary>LoRA 1 <span class="badge-on">Krea2_HMNSFW_AIO · 1.0</span></summary>
+        <div class="inner">
+          <label class="small">LoRA</label>
+          <select><option>Krea2_HMNSFW_AIO</option><option>None</option></select>
+          <label class="small">Strength</label>
+          <div class="sliderrow"><input type="range" min="-10" max="10" step="0.1" value="1" oninput="this.parentNode.querySelector('.val').textContent=this.value"><span class="val">1</span></div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>LoRA 2 <span class="badge-off">off</span></summary>
+        <div class="inner">
+          <label class="small">LoRA</label>
+          <select><option>None</option></select>
+          <label class="small">Strength</label>
+          <div class="sliderrow"><input type="range" min="-10" max="10" step="0.1" value="1" oninput="this.parentNode.querySelector('.val').textContent=this.value"><span class="val">1</span></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h3>Image control <span class="tag">optional</span></h3>
+
+      <details class="section">
+        <summary>🖼 Reference image <span class="badge-off">off</span></summary>
+        <div class="inner">
+          <div class="drop">Drop image here or <b>browse</b></div>
+          <label class="small">Reference strength</label>
+          <div class="sliderrow"><input type="range" min="0" max="1" step="0.05" value="0.4" oninput="this.parentNode.querySelector('.val').textContent=this.value"><span class="val">0.4</span></div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>🗺 Depth map <span class="badge-off">off</span></summary>
+        <div class="inner">
+          <div class="drop">Drop depth map here or <b>browse</b></div>
+          <div class="row2">
+            <div>
+              <label class="small">Depth control LoRA</label>
+              <select><option>None</option></select>
+            </div>
+            <div>
+              <label class="small">Depth strength</label>
+              <div class="sliderrow"><input type="range" min="0" max="10" step="0.1" value="1" oninput="this.parentNode.querySelector('.val').textContent=this.value"><span class="val">1</span></div>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- ================= Tab 3: Gallery ================= -->
+  <div class="tabpane" id="pane-gallery">
+    <div class="preview" id="preview">
+      <div class="placeholder" id="ph"><div class="big">🖼</div>No images yet — hit Generate below</div>
+    </div>
+    <div class="card">
+      <h3>Session gallery</h3>
+      <div class="thumbs" id="thumbs"><div class="empty">Generated images collect here — click to view</div></div>
+    </div>
+  </div>
+
+  <div class="note">Mockup — controls are clickable but nothing is generated for real. Generate works from any tab and jumps to Gallery when done.</div>
+</div>
+
+<!-- ================= Sticky generate bar (all tabs) ================= -->
+<div class="genbar">
+  <div class="inner">
+    <div class="stepper">
+      <button onclick="stepImages(-1)">−</button><span id="nimg">1 image</span><button onclick="stepImages(1)">+</button>
+    </div>
+    <div style="font-size:11px; color:var(--muted); font-family:ui-monospace,monospace" id="status">ready</div>
+    <button class="genbtn" id="gen" onclick="fakeGenerate()"><span class="fill" id="fill"></span><span class="lbl" id="genlbl">⚡ Generate</span></button>
+  </div>
+</div>
+
+<script>
+  // tabs
+  function showTab(name){
+    document.querySelectorAll('.tabbar button').forEach(x=>x.classList.toggle('active', x.dataset.tab===name));
+    document.querySelectorAll('.tabpane').forEach(x=>x.classList.remove('active'));
+    document.getElementById('pane-'+name).classList.add('active');
+  }
+  document.querySelectorAll('.tabbar button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+  // char count
+  const ta=document.getElementById('prompt'), cc=document.getElementById('charcount');
+  ta.addEventListener('input',()=>cc.textContent=ta.value.length);
+  cc.textContent=ta.value.length;
+
+  // image count stepper
+  let n=1;
+  function stepImages(d){ n=Math.min(4,Math.max(1,n+d)); document.getElementById('nimg').textContent=n+(n>1?' images':' image'); }
+
+  // fake generation — progress lives in the Generate button, visible from any tab
+  const grads=[['#f59e0b','#ef4444'],['#6366f1','#06b6d4'],['#10b981','#3b82f6'],['#ec4899','#8b5cf6']];
+  let gi=0, busy=false, gcount=0;
+  function fakeGenerate(){
+    if(busy) return; busy=true;
+    const btn=document.getElementById('gen'), fill=document.getElementById('fill'),
+          lbl=document.getElementById('genlbl'), status=document.getElementById('status');
+    btn.disabled=true;
+    let s=0;
+    const iv=setInterval(()=>{
+      s++;
+      fill.style.width=(s/8*100)+'%';
+      lbl.textContent='Generating… '+Math.round(s/8*100)+'%';
+      status.textContent='step '+s+'/8';
+      if(s>=8){
+        clearInterval(iv);
+        setTimeout(()=>{
+          fill.style.width='0%'; lbl.textContent='⚡ Generate'; status.textContent='done · 50.2s';
+          const g=grads[gi++%grads.length];
+          const css='linear-gradient(135deg,'+g[0]+','+g[1]+')';
+          document.getElementById('ph').style.display='none';
+          document.getElementById('preview').style.background=css;
+          const tw=document.getElementById('thumbs');
+          if(tw.querySelector('.empty')) tw.innerHTML='';
+          const t=document.createElement('div'); t.className='t'; t.style.background=css;
+          t.onclick=()=>{ document.getElementById('preview').style.background=css;
+            tw.querySelectorAll('.t').forEach(x=>x.classList.remove('sel')); t.classList.add('sel'); };
+          tw.prepend(t);
+          document.getElementById('gcount').textContent=++gcount;
+          showTab('gallery');           // jump to Gallery when finished
+          btn.disabled=false; busy=false;
+        },400);
+      }
+    },380);
+  }
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@ Set KREA2_BASE_DIR to a local Krea-2-Turbo snapshot to skip that download.
 """
 
 import os
+import random
 from pathlib import Path
 
 import gradio as gr
@@ -34,11 +35,55 @@ function() {
 }
 """
 
+# Tab layout with a fixed generate bar; content gets bottom padding so the bar
+# never covers it.
+CSS = """
+.gradio-container {max-width: 920px !important; margin: 0 auto; padding-bottom: 120px !important;}
+#genbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: var(--background-fill-primary);
+  border-top: 1px solid var(--border-color-primary);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.08);
+  padding: 10px max(24px, calc((100vw - 872px) / 2));
+  margin: 0; align-items: center; gap: 12px;
+}
+#genbar > * {min-width: 0;}
+#generate-button {height: 46px; font-size: 1.05em; font-weight: 700;}
+#genbar-status, #genbar-status label, #genbar-status input, #genbar-status textarea {
+  border: none !important; background: transparent !important; box-shadow: none !important;
+}
+#genbar-status input, #genbar-status textarea {
+  font-family: var(--font-mono); font-size: 11px; color: var(--body-text-color-subdued);
+}
+#seed-random {align-self: stretch; height: auto;}
+#app-header {display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 4px 0 0;}
+#app-header h1 {font-size: 20px; margin: 0;}
+#app-header .sub {color: var(--body-text-color-subdued); font-size: 12px;}
+"""
+
 
 def lora_choices():
     LORAS_DIR.mkdir(exist_ok=True)
     files = sorted(LORAS_DIR.glob("*.safetensors"), key=lambda p: p.name.lower())
     return [("None", "")] + [(p.stem, str(p)) for p in files]
+
+
+def random_seed():
+    return random.randint(0, 2**31 - 1)
+
+
+def lora_badge(slot, path, strength):
+    if path:
+        return gr.Accordion(label=f"LoRA {slot} · {Path(path).stem} · {float(strength):g}")
+    return gr.Accordion(label=f"LoRA {slot} · off")
+
+
+def reference_badge(image):
+    return gr.Accordion(label="🖼 Reference image · on" if image is not None else "🖼 Reference image · off")
+
+
+def depth_badge(image):
+    return gr.Accordion(label="🗺 Depth map · on" if image is not None else "🗺 Depth map · off")
 
 
 def generate(
@@ -58,6 +103,7 @@ def generate(
     seed,
     num_images,
     safety_on,
+    session_images,
     progress=gr.Progress(),
 ):
     if not prompt or not prompt.strip():
@@ -104,7 +150,15 @@ def generate(
             f"generate {timings['generate_seconds']}s · "
             f"{timings['seconds_per_image']}s/image"
         )
-        return result.images, timing_text + "\n\nSaved:\n" + "\n".join(result.saved + [result.metadata_path])
+        # Newest images first; the session gallery accumulates across jobs.
+        session_images = list(result.images) + list(session_images or [])
+        return (
+            session_images,
+            timing_text + "\n\nSaved:\n" + "\n".join(result.saved + [result.metadata_path]),
+            f"done · {timings['total_seconds']}s · {len(session_images)} image(s) this session",
+            session_images,
+            gr.Tabs(selected="gallery"),
+        )
     except gr.Error:
         raise
     except Exception as e:  # surface OOM / download errors as a friendly message, not a traceback
@@ -115,42 +169,82 @@ def generate(
         raise gr.Error(f"Generation failed: {e}") from None
 
 
-with gr.Blocks(title="Krea 2 Turbo · Alis MLX", js=KEYBOARD_SHORTCUT_JS) as demo:
+with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
     default_prec = default_precision()  # the build already in this folder, if any
-    gr.Markdown("# Krea&nbsp;2&nbsp;Turbo · Alis MLX\n"
-                "Local text-to-image on Apple silicon · 8-step Turbo (no CFG). "
-                "**First run loads the model (~30 s); then ~50 s per 1024-base image on an M3 Ultra** "
-                "(slower chips take longer; ×N for N images).")
-    with gr.Row():
-        with gr.Column(scale=1):
-            prompt = gr.Textbox(label="Prompt", lines=3, value="a fox in the snow")
-            model = gr.Dropdown(MODELS, value=default_prec, label="Model")
-            lora_path = gr.Dropdown(lora_choices(), value="", label="LoRA 1")
-            lora_strength = gr.Slider(-10.0, 10.0, value=1.0, step=0.05, label="LoRA 1 strength")
-            lora_path_2 = gr.Dropdown(lora_choices(), value="", label="LoRA 2")
-            lora_strength_2 = gr.Slider(-10.0, 10.0, value=1.0, step=0.05, label="LoRA 2 strength")
-            reference_image = gr.Image(label="Reference image", type="pil")
-            reference_strength = gr.Slider(0.0, 1.0, value=0.4, step=0.05, label="Reference strength")
-            depth_image = gr.Image(label="Depth map", type="pil")
-            depth_lora_path = gr.Dropdown(lora_choices(), value="", label="Depth control LoRA")
-            depth_strength = gr.Slider(0.0, 10.0, value=1.0, step=0.05, label="Depth strength")
-            with gr.Row():
-                aspect_ratio = gr.Dropdown(ASPECT_RATIOS, value="1:1", label="Aspect ratio")
-                steps = gr.Slider(4, 12, value=8, step=1, label="Steps")
-            with gr.Row():
-                seed = gr.Number(value=0, label="Seed", precision=0)
-                num_images = gr.Slider(1, 4, value=1, step=1, label="Images")
-            safety_chk = gr.Checkbox(value=True, label="NSFW safety filter (recommended; required by the license for public deployments)")
-            btn = gr.Button("Generate", variant="primary", elem_id="generate-button")
+    session_images = gr.State([])
+
+    gr.HTML(
+        '<div id="app-header"><h1>Krea&nbsp;2&nbsp;Turbo <span style="font-weight:400;opacity:.6">· Alis MLX</span></h1>'
+        '<span class="sub">Local text-to-image on Apple silicon · 8-step Turbo (no CFG) · '
+        'first run loads the model (~30 s), then ~50 s per 1024-base image on an M3 Ultra</span></div>'
+    )
+
+    with gr.Tabs() as tabs:
+        # ---------------- Tab 1: Prompt & settings ----------------
+        with gr.Tab("✏️ Prompt", id="prompt"):
+            prompt = gr.Textbox(label="Prompt", lines=6, value="a fox in the snow",
+                                placeholder="Describe the image you want…")
             gr.Examples(
                 [["a fox in the snow"],
                  ["a neon city street at night in the rain, reflections"],
                  ["a close-up portrait of an old fisherman, weathered face"]],
                 inputs=prompt,
             )
-        with gr.Column(scale=1):
-            gallery = gr.Gallery(label="Output", columns=2, height=560, object_fit="contain")
-            saved_paths = gr.Textbox(label="Saved files", lines=5, interactive=False)
+            with gr.Group():
+                with gr.Row():
+                    model = gr.Dropdown(MODELS, value=default_prec, label="Model")
+                    aspect_ratio = gr.Dropdown(ASPECT_RATIOS, value="1:1", label="Aspect ratio")
+                    steps = gr.Slider(4, 12, value=8, step=1, label="Steps")
+                with gr.Row():
+                    seed = gr.Number(value=0, label="Seed", precision=0, scale=2)
+                    seed_btn = gr.Button("🎲 Random seed", scale=1, elem_id="seed-random")
+                safety_chk = gr.Checkbox(
+                    value=True,
+                    label="NSFW safety filter (recommended; required by the license for public deployments)",
+                )
+
+        # ---------------- Tab 2: LoRAs & image control ----------------
+        with gr.Tab("🎛 LoRAs & Control", id="loras"):
+            with gr.Accordion("LoRA 1 · off", open=True) as lora_acc_1:
+                lora_path = gr.Dropdown(lora_choices(), value="", label="LoRA")
+                lora_strength = gr.Slider(-10.0, 10.0, value=1.0, step=0.05, label="Strength")
+            with gr.Accordion("LoRA 2 · off", open=False) as lora_acc_2:
+                lora_path_2 = gr.Dropdown(lora_choices(), value="", label="LoRA")
+                lora_strength_2 = gr.Slider(-10.0, 10.0, value=1.0, step=0.05, label="Strength")
+            with gr.Accordion("🖼 Reference image · off", open=False) as ref_acc:
+                reference_image = gr.Image(label="Reference image", type="pil")
+                reference_strength = gr.Slider(0.0, 1.0, value=0.4, step=0.05, label="Reference strength")
+            with gr.Accordion("🗺 Depth map · off", open=False) as depth_acc:
+                depth_image = gr.Image(label="Depth map", type="pil")
+                with gr.Row():
+                    depth_lora_path = gr.Dropdown(lora_choices(), value="", label="Depth control LoRA")
+                    depth_strength = gr.Slider(0.0, 10.0, value=1.0, step=0.05, label="Depth strength")
+
+        # ---------------- Tab 3: Gallery ----------------
+        with gr.Tab("🖼 Gallery", id="gallery"):
+            gallery = gr.Gallery(label="Session gallery", columns=3, height=560, object_fit="contain")
+            with gr.Accordion("Last job details", open=False):
+                saved_paths = gr.Textbox(label="Saved files", lines=5, interactive=False)
+
+    # ---------------- Sticky generate bar (visible from every tab) ----------------
+    with gr.Row(elem_id="genbar"):
+        num_images = gr.Slider(1, 4, value=1, step=1, label="Images", scale=1, container=True)
+        status = gr.Textbox(value="ready", show_label=False, interactive=False, lines=1,
+                            container=False, elem_id="genbar-status", scale=1)
+        btn = gr.Button("⚡ Generate", variant="primary", elem_id="generate-button", scale=2)
+
+    # keep accordion badges in sync with their controls
+    for src in (lora_path, lora_strength):
+        src.change(lambda p, s: lora_badge(1, p, s), [lora_path, lora_strength], lora_acc_1,
+                   show_progress="hidden")
+    for src in (lora_path_2, lora_strength_2):
+        src.change(lambda p, s: lora_badge(2, p, s), [lora_path_2, lora_strength_2], lora_acc_2,
+                   show_progress="hidden")
+    reference_image.change(reference_badge, reference_image, ref_acc, show_progress="hidden")
+    depth_image.change(depth_badge, depth_image, depth_acc, show_progress="hidden")
+
+    seed_btn.click(random_seed, None, seed, show_progress="hidden")
+
     btn.click(
         generate,
         [
@@ -170,11 +264,17 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX", js=KEYBOARD_SHORTCUT_JS) as dem
             seed,
             num_images,
             safety_chk,
+            session_images,
         ],
-        [gallery, saved_paths],
+        [gallery, saved_paths, status, session_images, tabs],
     )
 
 
 if __name__ == "__main__":
     # bind to loopback by default (don't expose the generator on the LAN); override with KREA2_HOST
-    demo.queue().launch(server_name=os.environ.get("KREA2_HOST", "127.0.0.1"), theme=gr.themes.Soft())
+    demo.queue().launch(
+        server_name=os.environ.get("KREA2_HOST", "127.0.0.1"),
+        theme=gr.themes.Soft(primary_hue="indigo"),
+        css=CSS,
+        js=KEYBOARD_SHORTCUT_JS,
+    )
