@@ -262,6 +262,15 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
 
     seed_btn.click(random_seed, None, seed, show_progress="hidden")
 
+    # re-scan the loras folder on every page load, so added/renamed files show up
+    # after a browser refresh instead of requiring an app restart
+    def refresh_lora_dropdowns():
+        choices = lora_choices()
+        return (gr.Dropdown(choices=choices),) * 3
+
+    demo.load(refresh_lora_dropdowns, None, [lora_path, lora_path_2, depth_lora_path],
+              show_progress="hidden")
+
     # In Gradio 6.19, returning a gr.Tabs(selected=...) update from the same event
     # that updates progress-tracked components leaves the progress overlay stuck at
     # 100%, so the jump to the Gallery tab runs as a chained follow-up event instead.
@@ -292,8 +301,11 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
 
 if __name__ == "__main__":
     # bind to loopback by default (don't expose the generator on the LAN); override with KREA2_HOST
+    # Pin the port: without server_port, Gradio silently falls back to 7861+ when 7860
+    # is taken (e.g. a forgotten instance), and you end up testing the wrong server.
     demo.queue().launch(
         server_name=os.environ.get("KREA2_HOST", "127.0.0.1"),
+        server_port=int(os.environ.get("KREA2_PORT", "7860")),
         theme=gr.themes.Soft(primary_hue="indigo"),
         css=CSS,
         js=KEYBOARD_SHORTCUT_JS,
