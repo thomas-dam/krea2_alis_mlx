@@ -20,9 +20,11 @@ from krea2.service import ASPECT_RATIOS, MODELS, default_precision, generate_and
 LORAS_DIR = Path(__file__).resolve().parent / "loras"
 
 
+# Gradio 6 injects this string verbatim as a <script> tag (it no longer wraps or
+# invokes it), so it must be a self-executing statement, not a bare function.
 KEYBOARD_SHORTCUT_JS = """
-function() {
-  document.addEventListener("keydown", function(event) {
+(() => {
+  document.addEventListener("keydown", (event) => {
     if (event.repeat || event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
       return;
     }
@@ -32,7 +34,7 @@ function() {
       button.click();
     }
   });
-}
+})();
 """
 
 # Tab layout with a fixed generate bar; content gets bottom padding so the bar
@@ -173,7 +175,6 @@ def generate(
             timing_text + "\n\nSaved:\n" + "\n".join(result.saved + [result.metadata_path]),
             f"done · {timings['total_seconds']}s · {len(session_images)} image(s) this session",
             session_images,
-            gr.Tabs(selected="gallery"),
         )
     except gr.Error:
         raise
@@ -261,6 +262,9 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
 
     seed_btn.click(random_seed, None, seed, show_progress="hidden")
 
+    # In Gradio 6.19, returning a gr.Tabs(selected=...) update from the same event
+    # that updates progress-tracked components leaves the progress overlay stuck at
+    # 100%, so the jump to the Gallery tab runs as a chained follow-up event instead.
     btn.click(
         generate,
         [
@@ -282,8 +286,8 @@ with gr.Blocks(title="Krea 2 Turbo · Alis MLX") as demo:
             safety_chk,
             session_images,
         ],
-        [gallery, saved_paths, status, session_images, tabs],
-    )
+        [gallery, saved_paths, status, session_images],
+    ).then(lambda: gr.Tabs(selected="gallery"), None, [tabs], show_progress="hidden")
 
 
 if __name__ == "__main__":
